@@ -84,6 +84,8 @@ const fieldsAndMill = tensorC(agri, smelter);
 const produce       = tensorC(fieldsAndMill, transport);      // (x) three sides
 const supply        = seqC(produce, transport);               // <| haul what was reaped
 const build         = productC(tractorWorks, armaments,       //  x  one steel, one contract
+  // The policy reads the decision off the shape: the side that was offered
+  // the steel is the side that answers.
   ({ a }) => (a.steel > 0 ? "a" : "b"));
 const narrowSale    = productC(grainSale, steelSale,          //  x  one contract
   ({ a }) => (a.grain > 0 ? "a" : "b"));
@@ -180,7 +182,10 @@ export interface PlanOrder {
   exportGrain: string;
   tradeSteel: string;
   buy: "engineers" | "tools" | "nothing";
-  armaments: number;   // share of this year's steel put by for 1941, 0..1
+  /** Where this year's steel goes. Not a share: a decision. The two works are
+   *  separate containers so the Plan takes their PRODUCT — both offered, one
+   *  answered — and a year's steel cannot be quietly spent on both. */
+  build: "tractors" | "armaments";
 }
 
 export type GosPrompt =
@@ -205,48 +210,64 @@ async function runYear(order: PlanOrder, depth: number): Promise<YearReport> {
   };
   game.workforce = w;
 
-  // ── TENSOR: fields, mill and railway all work at once, and all three owe
-  //    a report. There is no partial year.
-  trace(depth, "down", "gosplan", produce.label);
+  // ── TENSOR then CHAIN. The three sectors work at once and all three owe a
+  //    report; then what the railway is asked to haul is computed FROM those
+  //    reports. That computation is the second component of the composite
+  //    shape — `next` — and running it is the whole content of <|.
+  trace(depth, "down", "gosplan", supply.label);
   const railSteel = Math.min(s.steel, w.rail * RULES.railPerWorker * RULES.railSteelCost);
-  const produced = await produce.run(
-    produce.both(
-      fieldsAndMill.both(
-        { tag: "Harvest", workforce: w, tractors: s.tractors, year },
-        { tag: "Smelt", workers: w.mill, millCapacity: s.millCapacity, year },
+  const take = RULES.procurement[order.procurement];
+  const indMouths = w.mill + w.rail + w.army;
+
+  // `next` is a pure function of the first container's position, so what it
+  // decides has to be recovered afterwards rather than assigned inside it.
+  let exp: { choice: string; refused: boolean } = { choice: "none", refused: false };
+
+  const supplied = await supply.run(
+    supply.step(
+      produce.both(
+        fieldsAndMill.both(
+          { tag: "Harvest", workforce: w, tractors: s.tractors, year },
+          { tag: "Smelt", workers: w.mill, millCapacity: s.millCapacity, year },
+        ),
+        { tag: "Lay", workers: w.rail, steel: railSteel, year },
       ),
-      { tag: "Lay", workers: w.rail, steel: railSteel, year },
+      // The dependency, doing its work: `produced` is typed at the fibre we
+      // prompted, so `produced.left.left` is a HarvestReport and its `grade`
+      // is what decides which export decisions exist at all.
+      (produced) => {
+        const h = produced.left.left;
+        const stateGrain = h.grain * take + s.grain;
+        exp = resolveExport(h.grade, order.exportGrain);
+        const offerPort = exp.choice === "none" ? 0
+          : exp.choice === "surplus" ? Math.max(0, stateGrain - indMouths)
+          : exp.choice === "full" ? stateGrain * 0.6
+          : stateGrain * 0.9;
+        return {
+          tag: "Haul" as const,
+          railCapacity: s.railCapacity + produced.right.added,
+          needIndustry: indMouths,
+          offerPort: round(offerPort),
+          year,
+        };
+      },
     ),
     depth,
   );
-  // The tensor's position is a reply from EVERY side, one per fibre.
-  const harvest = produced.left.left;
-  const smelt = produced.left.right;
-  const rail = produced.right;
+
+  // The composite position is the product of the two fibres' positions: the
+  // triple that came back from the tensor, and the haul that the triple chose.
+  const harvest = supplied.first.left.left;
+  const smelt = supplied.first.left.right;
+  const rail = supplied.first.right;
+  const haul = supplied.second;
 
   s.steel = round(s.steel - rail.steelUsed + smelt.steel);
   s.railCapacity = round(s.railCapacity + rail.added);
   s.cadre = round(s.cadre + w.army);
 
-  // Procurement: what the state takes, and what the village keeps.
-  const take = RULES.procurement[order.procurement];
   const stateGrain = round(harvest.grain * take + s.grain);
   const villageGrain = round(harvest.grain * (1 - take));
-
-  // ── CHAIN: what the railway is asked to move is computed from what was
-  //    reaped. The second prompt is chosen by the first reply — that is <|.
-  const indMouths = w.mill + w.rail + w.army;
-  const exp = resolveExport(harvest.grade, order.exportGrain);
-  const offer = exp.choice === "none" ? 0
-    : exp.choice === "surplus" ? Math.max(0, stateGrain - indMouths)
-    : exp.choice === "full" ? stateGrain * 0.6
-    : stateGrain * 0.9;
-
-  const haul = await transport.run(
-    { tag: "Haul", railCapacity: s.railCapacity, needIndustry: indMouths,
-      offerPort: round(offer), year },
-    depth,
-  );
 
   // ── The trade. Which moves exist here was decided by the harvest grade and
   //    the steel position; `resolveExport`/`resolveSteel` are where the finite
@@ -298,22 +319,30 @@ async function runYear(order: PlanOrder, depth: number): Promise<YearReport> {
   }
 
   // ── PRODUCT: tractors x armaments. The same steel; offer both, answer one.
-  //    Armaments return nothing at all unless 1941 happens.
+  //    Armaments return nothing at all unless 1941 happens — which is what
+  //    makes this the one decision in the game with no economic hedge.
   trace(depth, "down", "gosplan", build.label);
-  const toArms = round(s.steel * Math.min(1, Math.max(0, order.armaments)));
-  const toWorks = round(s.steel - toArms);
+  const toTractors = order.build === "tractors";
   let tractorsBuilt = 0;
-  if (toWorks > 0 && s.plantCapacity > 0) {
-    const t = await tractorWorks.run(
-      { tag: "BuildTractors", steel: toWorks, plantCapacity: s.plantCapacity, year }, depth);
-    tractorsBuilt = t.built;
-    s.tractors += t.built;
-    s.steel = round(s.steel - t.steelUsed);
-  }
-  if (toArms > 0) {
-    const a = await armaments.run({ tag: "BuildArmaments", steel: toArms, year }, depth);
-    s.warReserve = round(s.warReserve + a.reserved);
-    s.steel = round(s.steel - a.steelUsed);
+  if (s.steel > 0) {
+    const made = await build.run(
+      build.offer(
+        { tag: "BuildTractors", steel: toTractors ? s.steel : 0,
+          plantCapacity: s.plantCapacity, year },
+        { tag: "BuildArmaments", steel: toTractors ? 0 : s.steel, year },
+      ),
+      depth,
+    );
+    // The position is a reply from exactly ONE side. Narrowing on `side` is
+    // the elimination of Either (R p) (T q).
+    if (made.side === "a") {
+      tractorsBuilt = made.value.built;
+      s.tractors += made.value.built;
+      s.steel = round(s.steel - made.value.steelUsed);
+    } else {
+      s.warReserve = round(s.warReserve + made.value.reserved);
+      s.steel = round(s.steel - made.value.steelUsed);
+    }
   }
   if (s.plantCapacity === 0 && s.engineers > 0 && s.steel >= RULES.plantSteel) {
     s.steel = round(s.steel - RULES.plantSteel);
@@ -437,14 +466,15 @@ export function parseGos(u: unknown): GosPrompt | null {
       for (const k of ["fields", "drivers", "mill", "rail", "army"]) {
         if (!isNum(l[k])) return null;
       }
-      if (!isStr(o.exportGrain) || !isStr(o.tradeSteel) || !isNum(o.armaments)) return null;
+      if (!isStr(o.exportGrain) || !isStr(o.tradeSteel)) return null;
       if (o.buy !== "engineers" && o.buy !== "tools" && o.buy !== "nothing") return null;
+      if (o.build !== "tractors" && o.build !== "armaments") return null;
       return { tag: "Plan", order: {
         procurement: o.procurement,
         labour: { fields: l.fields as number, drivers: l.drivers as number,
                   mill: l.mill as number, rail: l.rail as number, army: l.army as number },
         exportGrain: o.exportGrain, tradeSteel: o.tradeSteel,
-        buy: o.buy, armaments: o.armaments,
+        buy: o.buy, build: o.build,
       } };
     }
     default: return null;

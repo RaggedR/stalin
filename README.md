@@ -20,7 +20,9 @@ dependencies beyond the standard library.
 ```
 
 The original design brief is in
-[`game-description.txt`](game-description.txt).
+[`game-description.txt`](game-description.txt); how Ghani's containers were
+actually used to build it is in [`implementation.pdf`](implementation.pdf)
+(source: `implementation.tex`, built with `tectonic`).
 
 ## The game
 
@@ -60,7 +62,7 @@ the grain — the way to pay in machines instead of people.
 ./up.sh
 deno run --allow-net stalin.ts new --seed 1928
 deno run --allow-net stalin.ts plan --labour 95,0,12,8,0 --procure firm \
-    --export surplus --buy engineers
+    --export surplus --buy engineers --build tractors
 ...five times...
 deno run --allow-net stalin.ts reckoning
 ./down.sh
@@ -123,7 +125,7 @@ never measured tonnes.
 |---|---|---|
 | `⊠` tensor | fields ⊠ mill ⊠ railway | all three work at once and **all three owe a report**; there is no partial year |
 | `◁` chain | produce ◁ haul | what the railway is asked to move is computed **from what was reaped** |
-| `×` product | tractors × armaments | the same steel, one contract: offer both, answer one |
+| `×` product | tractors × armaments | the same steel, one decision: offer both, answer one |
 | `+` sum | the branches of a year | the moves legal in trade are not those legal in winter |
 
 And the progression Robin asked for — *export both grain and steel* — is a

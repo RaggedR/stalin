@@ -18,7 +18,7 @@ const USAGE = `stalin — the First Five-Year Plan, 1928-1932
   stalin new [--seed N]
   stalin plan --labour F,D,M,R,A --procure light|firm|total
               [--export none|surplus|full|maximum] [--steel none|buy|sell]
-              [--buy engineers|tools|nothing] [--arms 0..1]
+              [--buy engineers|tools|nothing] [--build tractors|armaments]
   stalin status
   stalin reckoning
 
@@ -30,8 +30,9 @@ const USAGE = `stalin — the First Five-Year Plan, 1928-1932
   --export   how much of the state's grain is offered to the port. A failed
              harvest permits nothing; the type system will not let it.
   --steel    buy steel abroad while in deficit, sell it once in surplus.
-  --arms     the share of this year's steel put by for 1941. It returns
-             nothing else, ever.`;
+  --build    where this year's steel goes. Not a share: a decision. Armaments
+             return nothing else, ever — they are only worth anything if 1941
+             happens.`;
 
 async function ask(prompt: unknown): Promise<Record<string, unknown>> {
   let res: Response;
@@ -100,7 +101,7 @@ switch (cmd) {
       exportGrain: flag("export", "none"),
       tradeSteel: flag("steel", "none"),
       buy: flag("buy", "nothing"),
-      armaments: Number(flag("arms", "0")),
+      build: flag("build", "tractors"),
     } });
     showYear(r);
     console.log("");

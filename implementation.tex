@@ -1,0 +1,434 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=black,urlcolor=blue]{hyperref}
+\usepackage{parskip}
+\usepackage{needspace}
+
+\definecolor{kw}{RGB}{20,80,160}
+\definecolor{cmt}{RGB}{110,110,110}
+\definecolor{str}{RGB}{160,60,20}
+
+\lstdefinestyle{code}{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{kw}\bfseries,
+  commentstyle=\color{cmt}\itshape,
+  stringstyle=\color{str},
+  breaklines=true,
+  frame=leftline,
+  framesep=7pt,
+  xleftmargin=12pt,
+  rulecolor=\color{gray!45},
+  columns=fullflexible,
+  showstringspaces=false,
+}
+\lstset{style=code}
+\lstdefinelanguage{TS}{
+  morekeywords={type,function,switch,case,return,const,extends,never,interface,let,async,await,import,export,null,infer},
+  morecomment=[l]{//},
+  morestring=[b]",
+}
+\lstdefinestyle{trace}{
+  basicstyle=\ttfamily\scriptsize,
+  frame=leftline, framesep=7pt, xleftmargin=12pt,
+  rulecolor=\color{gray!45}, columns=fixed, keepspaces=true, breaklines=false,
+}
+
+\title{\vspace{-2em}Implementing a Game with Containers\\
+\large How \S3--\S5 of \emph{Containers for Typed Agentic AI} became \texttt{stalin}}
+\author{Robin Langer}
+\date{1 September 2026}
+
+\begin{document}
+\maketitle
+
+\section{The claim}
+
+A turn-based game is a container, and not by analogy.
+
+\begin{center}
+$P$ = the situations that can arise \qquad $R\,s$ = the moves that are legal in $s$
+\end{center}
+
+That is Ghani's own third example, verbatim: ``a data structure and its valid
+pointers --- the positions you are allowed to navigate to.'' And a
+\emph{player} --- human or machine --- is exactly a program of type
+$(s : P) \to R\,s$, which is \S3's ``the programmer's job''. A game engine that
+validates moves at run time is a game engine whose container it has not
+written down.
+
+So the thing a game can demonstrate that a bookkeeping assistant cannot is
+sharper than ``the types fit together'':
+
+\begin{quote}
+An illegal move should be \emph{unconstructible}, not rejected.
+\end{quote}
+
+\texttt{stalin} is a resource-allocation game about the First Five-Year Plan,
+built to see how much of that is actually attainable in TypeScript. This note
+records what worked, what had to be discovered, and --- \S7 --- what did not.
+
+\section{The tower is a command economy}
+
+\S4 says an event handler is a morphism of containers: a pair
+\[
+  u : P \to Q, \qquad f : (p : P) \to T\,(u\,p) \to R\,p ,
+\]
+control flowing down through $u$, data flowing back up through $f$. Relabel:
+Gosplan issues a quota to the Commissariat of Heavy Industry, which issues one
+to the mill, which reports what it made. That is not a metaphor for a command
+economy; it is one.
+
+\begin{lstlisting}[style=trace]
+  you --$ stalin plan ...----> +-------------------+
+                               | 8801  gosplan     |   the Plan
+              +----------------+---------+---------+
+              v                v                   v
+   +-------------------+  +--------------+  +----------------+
+   | 8802 agriculture  |  | 8803 industry|  | 8804 transport |   commissariats
+   +-------------------+  +--------------+  +----------------+
+                               v
+                     +--------------------+
+                     | 8805 foreign trade |
+                     +--------------------+
+\end{lstlisting}
+
+\noindent Each arrow is a spawned CLI process, not a function call, which
+matters for \S7: between any two boxes everything the type system knew is
+destroyed, and each ingress has to re-establish it by validating rather than
+asserting.
+
+\section{The containers, written as their graphs}
+
+A container is presented not as a pair $(\texttt{Shape}, \texttt{Pos})$ but as
+its \textbf{graph}: the union of its fibres. That is what makes the type-level
+constructions compute, because a conditional type distributes over a union.
+
+\begin{lstlisting}[language=TS]
+interface Fib<S, P> { readonly shape: S; readonly pos: P }
+type Shape<C>    = C extends Fib<infer S, unknown> ? S : never;
+type PosAt<C, S> = C extends Fib<infer S1, infer P> ? (S extends S1 ? P : never) : never;
+\end{lstlisting}
+
+\noindent Each commissariat is then a declaration you can read against the
+server it describes --- an indexed family, one line per index:
+
+\begin{lstlisting}[language=TS]
+type AgricultureC =
+  | Fib<{tag:"Harvest"; workforce: Workforce; tractors: number; year: number}, HarvestReport>
+  | Fib<{tag:"Winter";  ruralRations: Grain; industrialRations: Grain; year: number}, WinterReport>
+  | Fib<{tag:"Report";  year: number}, Dispatch>
+  | Fib<{tag:"Census"},                 CensusReturn>;
+\end{lstlisting}
+
+Two things are worth noticing. First, nothing says a server must correspond to
+exactly one container. Port 8803 serves three: the smelter, and separately
+
+\begin{lstlisting}[language=TS]
+type TractorWorksC = Fib<{tag:"BuildTractors"; steel: Steel; plantCapacity: number; year: number}, TractorReport>;
+type ArmamentsC    = Fib<{tag:"BuildArmaments"; steel: Steel; year: number}, ArmamentReport>;
+\end{lstlisting}
+
+\noindent They are split precisely so the Plan can take their \emph{product}
+(\S4.3). A sub-container is just a sub-family; the split costs nothing at run
+time and buys a combinator.
+
+Second, \verb|Report| and \verb|Census| have different response types but the
+same standing --- and that is where \S6 comes back. See \S6 below.
+
+\section{The four combinators}
+
+\subsection{Tensor $\otimes$ --- the three sectors}
+
+The fields, the mill and the railway all work through the same year, and all
+three owe a report. There is no partial year.
+
+\begin{lstlisting}[language=TS]
+const fieldsAndMill = tensorC(agri, smelter);
+const produce       = tensorC(fieldsAndMill, transport);
+\end{lstlisting}
+
+\noindent Shapes multiply and \emph{positions multiply}: a shape of
+\verb|produce| carries a prompt for each sector, and its position carries a
+report from each. The \verb|Promise.all| inside \verb|tensorC| is not an
+optimisation, it is the definition.
+
+\subsection{Sequential composition $\lhd$ --- the haul}
+
+What the railway is asked to move cannot be known until the fields have been
+reaped, because it depends on how much there is and on what grade it came in
+at. That is exactly $\lhd$: the composite's shape is a first prompt
+\emph{together with a function} choosing the second from the first's reply.
+
+\begin{lstlisting}[language=TS]
+const supply = seqC(produce, transport);
+
+const supplied = await supply.run(
+  supply.step(produceShape, (produced) => {
+    const h = produced.left.left;              // a HarvestReport, at this fibre
+    const stateGrain = h.grain * take + s.grain;
+    exp = resolveExport(h.grade, order.exportGrain);   // <- the gate, SS5
+    const offerPort = exp.choice === "none" ? 0 : /* ... */ ;
+    return { tag: "Haul", railCapacity: s.railCapacity + produced.right.added,
+             needIndustry: indMouths, offerPort, year };
+  }),
+  depth);
+
+const harvest = supplied.first.left.left;      // typed, uncast
+const haul    = supplied.second;
+\end{lstlisting}
+
+\noindent \verb|produced.left.left| is a \verb|HarvestReport| because that is
+the fibre we prompted, not because anybody asserted it. The application of
+\verb|next| inside \verb|seqC|'s runner is the whole content of $\lhd$: the
+composite shape carried a function, and that is where it is used.
+
+\subsection{Product $\times$ --- tractors or armaments}
+
+The pattern \S5 says the practitioners' catalogue had not named: prompt both
+sides, and owe a reply from exactly one. In the game it is the central
+strategic decision, because armaments are the only investment with no economic
+return whatever --- they are worth something only if 1941 happens.
+
+\begin{lstlisting}[language=TS]
+const build = productC(tractorWorks, armaments,
+  // The policy reads the decision off the shape: whichever side was offered
+  // the steel is the side that answers.
+  ({ a }) => (a.steel > 0 ? "a" : "b"));
+
+const made = await build.run(
+  build.offer(
+    { tag: "BuildTractors",  steel: toTractors ? s.steel : 0, plantCapacity, year },
+    { tag: "BuildArmaments", steel: toTractors ? 0 : s.steel, year }),
+  depth);
+
+if (made.side === "a") { s.tractors    += made.value.built; }
+else                   { s.warReserve  += made.value.reserved; }
+\end{lstlisting}
+
+\noindent Narrowing on \verb|made.side| is the elimination of
+$\texttt{Either}\,(R\,p)\,(T\,q)$. This is why the year's steel allocation was
+made a \emph{decision} rather than a fraction: a split would have been the
+tensor, and calling it a product would have been false.
+
+\subsection{$\times \to \otimes$ --- the railway to the port}
+
+The most satisfying place the algebra earned its keep. While the line to the
+port is narrow there is one trade delegation and one contract, so the sale is
+a \emph{product} --- grain or steel. Build enough rail and both can be shipped,
+so the sale becomes a \emph{tensor}.
+
+\begin{lstlisting}[language=TS]
+const narrowSale = productC(grainSale, steelSale, /* ... */);
+const wideSale   = tensorC(grainSale, steelSale);
+// ...
+const wide = throughputOf(s.railCapacity) === "wide";
+\end{lstlisting}
+
+\noindent The design goal was ``transition from exporting grain to exporting
+steel, or export both''. In the algebra that last clause is not a bigger
+number; it is a different combinator. Same shapes, different positions: answer
+one, or answer both.
+
+\subsection{Sum $+$ --- present, but not as a call}
+
+\verb|sumC| is never invoked in the game, and the note should say so plainly.
+Routing appears instead as the \emph{shape type} of each container: a tagged
+union $\{\texttt{Harvest}\} + \{\texttt{Winter}\} + \dots$ is a coproduct, and
+its eliminator is the \verb|switch| in each server's dispatch. So the sum is
+doing real work, in the same place \S3's container always put it --- but no
+composite container is built with it, and it would be an overstatement to
+claim otherwise.
+
+\section{The dependent gate}
+
+This is where the game does something the bookkeeping assistant could not.
+
+The algebra gives $\Sigma$-types over \emph{finite} index sets, because
+$\Sigma\,(s : S).\,B\,s = \bigcup_{s} \{s\} \times B\,s$ and a conditional type
+distributes over a union. So a rule expressible over a \emph{grade} can be
+carried by the checker, and the same rule over a tonnage cannot. The game is
+therefore built to think in grades:
+
+\begin{lstlisting}[language=TS]
+type ExportChoice<G extends HarvestGrade> =
+  G extends "failure"  ? "none"
+: G extends "poor"     ? "none" | "surplus"
+: G extends "adequate" ? "none" | "surplus" | "full"
+:                        "none" | "surplus" | "full" | "maximum";
+
+function exportPlan<G extends HarvestGrade>(grade: G, choice: ExportChoice<G>): ...
+\end{lstlisting}
+
+\noindent \verb|G| is inferred from the first argument, so \verb|choice| is
+typed at \emph{that} grade alone. The consequence:
+
+\begin{lstlisting}[language=TS]
+exportPlan("bumper",  "maximum");   // fine
+exportPlan("failure", "maximum");   // does not compile
+\end{lstlisting}
+
+Exporting grain during a failed harvest is not a move the engine rejects. It is
+a move that cannot be written down --- which was the whole ambition in \S1.
+
+The same trick carries the game's arc:
+
+\begin{lstlisting}[language=TS]
+type SteelTrade<P extends SteelPosition> =
+  P extends "deficit"  ? "none" | "buy"
+: P extends "balanced" ? "none"
+:                        "none" | "sell";
+\end{lstlisting}
+
+\noindent You begin in deficit and buy steel with grain at a punitive rate; you
+end in surplus and sell it. The transition from importing steel to exporting it
+is a \textbf{change of fibre}, not an \verb|if|, and \texttt{balanced} is the
+hinge at which neither trade exists.
+
+\paragraph{Introduction and elimination.} The player types a string, so at the
+CLI boundary the choice is a \verb|string| and must be checked --- there is no
+avoiding that, and it is the same ingress discipline every hop needs anyway.
+What the gate buys is everything \emph{past} that boundary. The check is a
+\verb|switch| on the grade, and each branch is inside one fibre:
+
+\begin{lstlisting}[language=TS]
+switch (grade) {
+  case "failure": { const c = exportPlan("failure", "none");                 /* ... */ }
+  case "poor":    { const c = exportPlan("poor", ok ? "surplus" : "none");   /* ... */ }
+  // ...
+}
+\end{lstlisting}
+
+\noindent That \verb|switch| is the elimination rule of the finite $\Sigma$.
+Inside a branch the compiler knows which fibre it is in, and no illegal
+combination can be constructed from there on.
+
+\paragraph{It is also historically apt.} Quotas were set against reported
+categories, never measured tonnes. Making the type system coarse in the same
+way the bureaucracy was coarse is a coincidence, but a useful one: it means the
+discretisation the technique demands is not a distortion of the subject.
+
+\section{Shape and truth}
+
+\S6 makes a caveat about the language model at the leaf: it is an untyped
+oracle, and presenting it as $(s : S) \to P\,s$ is a \emph{promise} made good by
+a wrapper, not a fact about the model. The game relocates that caveat and makes
+it a mechanic.
+
+Every commissariat holds two things the Plan cannot see: how well it is
+actually doing, and how far it will inflate a shortfall.
+
+\begin{lstlisting}[language=TS]
+record(year: number, quota: number, delivered: number): Dispatch {
+  const gap = Math.max(0, quota - delivered);
+  const reported = delivered + gap * this.bias * (0.7 + 0.6 * this.noise());
+  // ...
+}
+\end{lstlisting}
+
+\noindent \verb|Report| and \verb|Census| return values of the same standing:
+both are well-typed positions of their container, both validated at ingress,
+both indistinguishable to the checker. One is true. The player plans against
+the other, and the divergence is revealed only at the reckoning.
+
+\begin{quote}
+The type of a dispatch guarantees its shape and says exactly nothing about its
+truth.
+\end{quote}
+
+\noindent That is not a limitation of this encoding; it is what a type system
+is. A command economy is a typed tower whose leaves are untrusted oracles, and
+the types cannot save you --- which is a serviceable summary both of \S6 and of
+the subject matter.
+
+\section{Where it leaks}
+
+\paragraph{The $\lhd$ implemented is a sub-container of the paper's.} Its
+fibres are indexed by \emph{pairs} $(S_A, S_B)$: a first shape together with a
+function landing in one particular second shape. Ghani's $\lhd$ is larger,
+because there \verb|next| may return different shapes of $d$ for different
+positions, making the composite position a genuine
+$\Sigma\,(p : \texttt{c.Pos}\,s).\,\texttt{d.Pos}\,(v\,p)$ --- a $\Sigma$ over
+an \emph{infinite} index, which does not distribute. Restricting \verb|next| to
+a single fibre is exactly what buys the position type back as a plain product.
+What it costs is a branching \verb|next|, which has a union return type and
+lies in no single fibre.
+
+\paragraph{\texttt{next} must be pure, and the game wanted it not to be.} The
+export decision is made inside \verb|next| (it depends on the harvest grade)
+but is needed afterwards. Since \verb|next| is a function of the position and
+returns only a shape, the decision is captured in a closure variable and read
+back after the run. That works and is flagged in the source, but it is a
+concession: the honest version would carry the decision in the composite shape.
+
+\paragraph{The morphism is still not first class.} The container is a value;
+the event handler over it is not. $f$ must know which branch it is in to know
+what it owes, so the year is written one phase at a time. Each phase is
+monomorphic and therefore cast-free, but a genuinely first-class
+$\mathrm{Cont}((P,R),(Q,T))$ would need the fibre treatment applied to
+morphisms as well.
+
+\paragraph{\texttt{deno check} passed while the game was broken.} When the
+library was vendored into this repository, all files typechecked and the first
+playthrough died at once, reporting that the delegate to port 8804 had exited
+with status 1. The reason is that \verb|wire.ts| locates the CLI tool it spawns
+with
+
+
+\begin{lstlisting}[language=TS]
+new URL("./delegate.ts", import.meta.url)   // resolved at run time, never checked
+\end{lstlisting}
+
+\noindent and that file had not been copied. The
+one file that makes each hop an actual process was the one file the compiler
+could not tell me was missing. Types hold within a process; the moment a
+boundary is a filesystem path or a socket, only running it tells you the truth.
+
+\section{Evidence}
+
+\begin{lstlisting}[style=trace]
+$ deno check *.ts lib/*.ts      # 0 errors, including type-tests.ts
+$ ./playthrough.sh ...          # deterministic on the seed: a game is a regression test
+\end{lstlisting}
+
+\noindent \verb|type-tests.ts| asserts the typed rules against the compiler.
+Every \verb|@ts-expect-error| in it claims that the next line \emph{is} an
+error, and TypeScript reports an unused directive as an error in its own right,
+so the file fails both if a legal move is rejected and if an illegal one is
+accepted. A negative suite that cannot fail is worth nothing, so it was
+mutation-tested: widening the \verb|"failure"| fibre by one option makes it
+stop compiling.
+
+That the types are right says nothing about whether the game is any good, so
+the design's central claim was checked by playing it. Three strategies, same
+seed:
+
+\begin{center}
+\begin{tabular}{lrrrl}
+\toprule
+strategy & starved & fallen & total dead & war \\
+\midrule
+mechanise, arm late & 0 & 18 & \textbf{18} & won \\
+build nothing & 0 & 60 & \textbf{60} & lost \\
+strip the villages & 53 & 29 & \textbf{82} & lost \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent Maximum extraction loses the war holding the largest stockpile,
+because the famine destroyed the manpower the steel was meant to protect. The
+first balance pass had this backwards --- brutality scored \emph{better} --- and
+no amount of reading the code would have shown it. Only playing it did.
+
+\paragraph{One correction made while writing this document.} Two of the four
+combinators, \verb|supply| and \verb|build|, were originally \emph{declared and
+never run}: the haul and the steel allocation were direct calls that bypassed
+them. A document describing them as load-bearing would have been false, so the
+code was changed rather than the prose. It is worth recording because it is the
+characteristic failure mode of this kind of work: an algebra can be written
+down, typecheck, read beautifully, and not actually be in the path of anything.
+
+\end{document}
