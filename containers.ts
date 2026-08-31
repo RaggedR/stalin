@@ -30,7 +30,7 @@ export interface SmeltReport { steel: Steel; idleCapacity: number }
 export interface TractorReport { built: number; steelUsed: Steel }
 export interface ArmamentReport { reserved: Steel; steelUsed: Steel }
 export interface RailReport { added: number; steelUsed: Steel }
-export interface HaulReport { toIndustry: Grain; toPort: Grain; stranded: Grain }
+export interface HaulReport { toIndustry: Grain; toPort: Grain; stranded: Grain; short: Grain }
 export interface SaleReport { gold: number; price: number; sold: number }
 export interface PurchaseReport { steel: Steel; grainUsed: Grain }
 
@@ -109,7 +109,7 @@ export type ArmamentsC =
 // ── Transport (:8804) ─────────────────────────────────────────────────
 export type TransportC =
   | Fib<{ tag: "Lay"; workers: People; steel: Steel; year: number }, RailReport>
-  | Fib<{ tag: "Haul"; railCapacity: number; needIndustry: Grain; offerPort: Grain; year: number }, HaulReport>
+  | Fib<{ tag: "Haul"; railCapacity: number; available: Grain; needIndustry: Grain; offerPort: Grain; year: number }, HaulReport>
   | Fib<{ tag: "Report"; year: number }, Dispatch>
   | Fib<{ tag: "Census" }, CensusReturn>;
 

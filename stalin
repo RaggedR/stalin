@@ -1,0 +1,3 @@
+#!/bin/sh
+# stalin — convenience wrapper, so a turn is `./stalin plan ...`
+exec deno run --quiet --allow-net "$(dirname "$0")/stalin.ts" "$@"

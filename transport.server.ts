@@ -12,7 +12,7 @@ import { serveContainer } from "./lib/wire.ts";
 
 export type TrPrompt =
   | { tag: "Lay"; workers: People; steel: Steel; year: number }
-  | { tag: "Haul"; railCapacity: number; needIndustry: Grain; offerPort: Grain; year: number }
+  | { tag: "Haul"; railCapacity: number; available: Grain; needIndustry: Grain; offerPort: Grain; year: number }
   | { tag: "Report"; year: number }
   | { tag: "Census" };
 
@@ -44,12 +44,19 @@ const handlers: Handlers = {
 
   // Feeding the workers comes first: a mill whose hands have starved smelts
   // nothing. Whatever capacity is left over can carry grain to the port.
+  //
+  // Three things bound a delivery, and all three must be applied. The railway
+  // can only move so much; the workers only need so much; and — the one that
+  // was missing — the state can only ship grain it actually procured. A light
+  // procurement is not a free lunch for the mill.
   Haul: (p) => {
-    const toIndustry = Math.min(p.needIndustry, p.railCapacity);
-    const spare = Math.max(0, p.railCapacity - toIndustry);
-    const toPort = Math.min(p.offerPort, spare);
-    const stranded = round(Math.max(0, p.offerPort - toPort));
-    return { toIndustry: round(toIndustry), toPort: round(toPort), stranded };
+    const toIndustry = Math.min(p.needIndustry, p.railCapacity, p.available);
+    const short = round(Math.max(0, p.needIndustry - toIndustry));
+    const spareRail = Math.max(0, p.railCapacity - toIndustry);
+    const spareGrain = Math.max(0, p.available - toIndustry);
+    const toPort = Math.min(p.offerPort, spareRail, spareGrain);
+    const stranded = round(Math.max(0, Math.min(p.offerPort, spareGrain) - toPort));
+    return { toIndustry: round(toIndustry), toPort: round(toPort), stranded, short };
   },
 
   Report: (p) => books.record(p.year, lastQuota, laid),
@@ -72,9 +79,10 @@ export function parseTr(u: unknown): TrPrompt | null {
       return isNum(u.workers) && isNum(u.steel) && isNum(u.year)
         ? { tag: "Lay", workers: u.workers, steel: u.steel, year: u.year } : null;
     case "Haul":
-      return isNum(u.railCapacity) && isNum(u.needIndustry) && isNum(u.offerPort) && isNum(u.year)
-        ? { tag: "Haul", railCapacity: u.railCapacity, needIndustry: u.needIndustry,
-            offerPort: u.offerPort, year: u.year } : null;
+      return isNum(u.railCapacity) && isNum(u.available) && isNum(u.needIndustry) &&
+             isNum(u.offerPort) && isNum(u.year)
+        ? { tag: "Haul", railCapacity: u.railCapacity, available: u.available,
+            needIndustry: u.needIndustry, offerPort: u.offerPort, year: u.year } : null;
     case "Report":
       return isNum(u.year) ? { tag: "Report", year: u.year } : null;
     case "Census":

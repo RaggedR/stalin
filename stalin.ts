@@ -111,11 +111,59 @@ switch (cmd) {
     const r = await ask({ tag: "Status" });
     const s = r.stocks as Record<string, number>;
     const w = r.workforce as Record<string, number>;
-    console.log(`\n  ${B(String(r.year))}   ${r.over ? Y("the plan is concluded") : "in plan"}`);
-    console.log(`  grain ${s.grain}  steel ${s.steel}  gold ${s.gold}  tractors ${s.tractors}`);
-    console.log(`  rail ${s.railCapacity}  mill ${s.millCapacity}  plant ${s.plantCapacity}`);
-    console.log(`  reserve ${s.warReserve}  cadre ${s.cadre}`);
-    console.log(D(`  fields ${w.fields} drivers ${w.drivers} mill ${w.mill} rail ${w.rail} army ${w.army}  dead ${w.dead}\n`));
+    const alive = w.fields + w.drivers + w.mill + w.rail + w.army;
+    const row = (a: string, av: unknown, b = "", bv: unknown = "") =>
+      `    ${a.padEnd(11)}${String(av).padStart(5)}` +
+      (b ? `        ${b.padEnd(11)}${String(bv).padStart(5)}` : "");
+
+    console.log(`\n  ${B(String(r.year))}   ${r.over ? Y("the plan is concluded") : D("in plan")}\n`);
+    console.log(`    ${B("LABOUR")}                    ${B("STOCKS")}`);
+    console.log(row("fields:", w.fields, "grain:", s.grain));
+    console.log(row("drivers:", w.drivers, "steel:", s.steel));
+    console.log(row("mill:", w.mill, "gold:", s.gold));
+    console.log(row("rail:", w.rail, "tractors:", s.tractors));
+    console.log(row("army:", w.army, "engineers:", s.engineers));
+    console.log(D(`    ${"living:".padEnd(11)}${String(alive).padStart(5)}`));
+    console.log(D(`    ${"dead:".padEnd(11)}${String(w.dead).padStart(5)}`));
+    console.log(`\n    ${B("CAPACITY")}                  ${B("FOR 1941")}`);
+    console.log(row("rail:", s.railCapacity, "reserve:", s.warReserve));
+    console.log(row("mill:", s.millCapacity, "cadre:", s.cadre));
+    console.log(row("plant:", s.plantCapacity));
+
+    if (!r.over) {
+      // Which steel trades exist is decided by the steel position, and that is
+      // known now. Which grain exports exist is decided by the harvest grade,
+      // and that is not known until the fields report — so it is left open.
+      const committed = RULES.steelCommitment;
+      // Judged on what the mill can make, not on what is left in the yard.
+      const canMake = Math.min(w.mill * RULES.millPerWorker * 0.9, s.millCapacity);
+      const pos = canMake < committed ? "deficit"
+        : canMake < committed * 1.5 ? "balanced" : "surplus";
+      const mark = (ok: boolean, t: string) => (ok ? t : D(t));
+
+      console.log(`\n    ${B("YOUR ORDERS")}   ${D(`(steel is in ${pos} as of January)`)}\n`);
+      console.log(`    --labour   F,D,M,R,A   ${D(`how the ${alive} living are set to work`)}`);
+      console.log(`    --procure  light | firm | total`);
+      console.log(D(`                 15% | 33%  | 65% of the harvest taken; the rest is what the village eats`));
+      console.log(`    --export   none | surplus | full | maximum`);
+      console.log(D(`                 decided against the harvest grade; a failed harvest permits only "none"`));
+      console.log(`    --steel    none | ${mark(pos === "deficit", "buy")} | ${mark(pos === "surplus", "sell")}`);
+      console.log(D(`                 buy only in deficit, sell only in surplus. The mill runs BEFORE the`));
+      console.log(D(`                 trade delegation, so this is re-judged in autumn — a January deficit`));
+      console.log(D(`                 can be an autumn surplus. Dimmed is what January says, not autumn.`));
+      console.log(`    --buy      engineers | tools | nothing`);
+      console.log(D(`                 engineer ${RULES.engineerGold}g -> +${RULES.engineerCapacity} mill;  tools ${RULES.toolsGold}g -> +10 plant`));
+      console.log(`    --build    tractors | armaments`);
+      console.log(D(`                 where ALL this year's steel goes. Armaments return nothing else, ever.`));
+      const gate: string[] = [];
+      if (s.plantCapacity === 0) gate.push("no plant yet: tractors cannot be built until you hold an engineer and 20 spare steel");
+      if (s.tractors === 0) gate.push("no tractors: any driver you assign produces nothing and still eats");
+      if (gate.length) {
+        console.log("");
+        for (const g of gate) console.log(Y(`    ! ${g}`));
+      }
+    }
+    console.log("");
     break;
   }
   case "reckoning": {

@@ -59,6 +59,12 @@ the grain — the way to pay in machines instead of people.
 ## Play
 
 ```
+./play                    # interactive: a spiel, then lettered options each year
+```
+
+Or drive it by flags, which is scriptable and deterministic:
+
+```
 ./up.sh
 deno run --allow-net stalin.ts new --seed 1928
 deno run --allow-net stalin.ts plan --labour 95,0,12,8,0 --procure firm \

@@ -60,7 +60,7 @@ const armaments = leaf<ArmamentsC>("armaments", IND, {
 });
 const transport = leaf<TransportC>("transport", TR, {
   Lay: (u) => rec(["added", "steelUsed"], u),
-  Haul: (u) => rec(["toIndustry", "toPort", "stranded"], u),
+  Haul: (u) => rec(["toIndustry", "toPort", "stranded", "short"], u),
   Report: (u) => rec(["year", "quotaMet", "output", "note"], u),
   Census: (u) => rec(["workforce", "stocks", "trueOutput"], u),
 });
@@ -112,8 +112,8 @@ const fresh = (seed: number): Game => ({
   seed,
   // 1928 was not year zero: there was a little steel, one foreign engineer,
   // and a railway that already reached somewhere.
-  stocks: { grain: 40, steel: 10, gold: 0, tractors: 0, engineers: 1,
-            railCapacity: 60, millCapacity: 25, plantCapacity: 0,
+  stocks: { grain: 40, steel: 10, gold: 0, tractors: 0, engineers: 0,
+            railCapacity: 60, millCapacity: 8, plantCapacity: 0,
             warReserve: 0, cadre: 0 },
   workforce: { fields: 105, drivers: 0, mill: 8, rail: 7, army: 0, dead: 0 },
   baselineOutput: 0,
@@ -246,6 +246,7 @@ async function runYear(order: PlanOrder, depth: number): Promise<YearReport> {
         return {
           tag: "Haul" as const,
           railCapacity: s.railCapacity + produced.right.added,
+          available: round(stateGrain),
           needIndustry: indMouths,
           offerPort: round(offerPort),
           year,
@@ -272,8 +273,12 @@ async function runYear(order: PlanOrder, depth: number): Promise<YearReport> {
   // ── The trade. Which moves exist here was decided by the harvest grade and
   //    the steel position; `resolveExport`/`resolveSteel` are where the finite
   //    Sigma is eliminated, and past them nothing illegal can be constructed.
-  const committed = RULES.tractorSteel * 5;
-  const st = resolveSteel(s.steel, committed, order.tradeSteel);
+  const committed = RULES.steelCommitment;
+  // The position is production against commitment, not the residue after a
+  // year's spending. A country that smelts thirty and spends thirty is not in
+  // deficit; it is working. Deficit means the mill cannot make what the plan
+  // has already promised — which is exactly when you must buy abroad.
+  const st = resolveSteel(smelt.steel, committed, order.tradeSteel);
   const sellSteel = st.choice === "sell" ? round(s.steel * 0.5) : 0;
   const buyGrain = st.choice === "buy" ? Math.min(haul.toPort, round(stateGrain * 0.15)) : 0;
 
@@ -386,15 +391,16 @@ async function runYear(order: PlanOrder, depth: number): Promise<YearReport> {
   game.dispatches.push(...notes);
 
   const report: YearReport = {
-    year, harvest, steel: s.steel, steelPosition: gradeSteel(s.steel, committed),
+    year, harvest, steel: s.steel, steelPosition: gradeSteel(smelt.steel, committed),
     tractorsBuilt, railAdded: rail.added, goldEarned: gold,
     grainExported: round(grainExported), steelExported, steelImported,
     dead, workforce: game.workforce, stocks: { ...s },
     dispatches: [
       ...notes,
       ...(exp.refused ? [`Narkomvneshtorg: an export of "${order.exportGrain}" is not possible on a ${harvest.grade} harvest; none was shipped.`] : []),
-      ...(st.refused ? [`Narkomvneshtorg: steel is in ${gradeSteel(s.steel, committed)}; "${order.tradeSteel}" is not a trade that exists this year.`] : []),
+      ...(st.refused ? [`Narkomvneshtorg: steel is in ${gradeSteel(smelt.steel, committed)}; "${order.tradeSteel}" is not a trade that exists this year.`] : []),
       ...(haul.stranded > 0 ? [`Narkomput: ${haul.stranded} of grain could not be moved and was left at the sidings.`] : []),
+      ...(haul.short > 0 ? [`Narkomput: ${haul.short} short of what the towns needed; the state had not procured it.`] : []),
     ],
   };
   game.history.push(report);

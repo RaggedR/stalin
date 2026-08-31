@@ -84,6 +84,11 @@ export const RULES = {
   railSteelCost: 0.5,     // ...costing this much steel per capacity unit
 
   tractorSteel: 2.0,
+  /** The steel the plan has already promised elsewhere — rail upkeep and the
+   *  tractor works — against which a stock is judged deficit, balanced or
+   *  surplus. It is what makes 1928 an importing year: you begin below it, so
+   *  the only steel trade that exists is `buy`. */
+  steelCommitment: 15.0,
   // Armaments: steel straight into the reserve, and men who must be trained
   // for years before they are soldiers rather than peasants holding rifles.
   warQuota: 40,           // reserve below which the war is simply lost
