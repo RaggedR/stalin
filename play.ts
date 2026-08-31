@@ -167,7 +167,28 @@ function showState(st: Dict): void {
   console.log(`      the railway carries ${pad(s.railCapacity)}` + D(`   grain a year, to the towns and the ports`));
   console.log(`      the mill can make   ${pad(s.millCapacity)}` + D(`   steel a year, if it has the hands`));
   console.log(`      the works can build ${pad(s.plantCapacity)}` + D(`   tractors a year`));
+
+  // The tractor works appears on its own the first year you hold an engineer
+  // and 20 spare steel. That is six steps from a standing start and there are
+  // only five years, so the interface has to say which step you are on.
+  if (n(s.plantCapacity) === 0) {
+    const needEng = n(s.engineers) === 0;
+    const needSteel = n(s.steel) < RULES.plantSteel;
+    const next = needEng && n(s.gold) < RULES.engineerGold
+      ? `sell grain abroad — ${RULES.engineerGold} in currency buys the engineer`
+      : needEng
+      ? `hire the German engineer; you have the currency`
+      : `smelt ${round(RULES.plantSteel - n(s.steel))} more steel and the works opens itself`;
+    console.log(Y(`\n    No tractor works yet.`) +
+      D(` It opens by itself the first year you hold an\n    engineer and ${RULES.plantSteel} spare steel. Next step: ${next}.`));
+    console.log(D(`    Then tractors take a further year to build and a further year to drive.`));
+  } else if (n(s.tractors) > n((st.workforce as Dict).drivers)) {
+    console.log(Y(`\n    ${n(s.tractors) - n((st.workforce as Dict).drivers)} tractors have nobody on them.`) +
+      D(` A tractor without a driver grows nothing.`));
+  }
 }
+
+const round = (x: number) => Math.round(x * 100) / 100;
 
 // ── The options ───────────────────────────────────────────────────────
 interface Order {
@@ -275,6 +296,15 @@ function optionsFor(st: Dict): Option[] {
       title: "Conscript",
       detail: `Five under arms. They eat and grow nothing — but a raw army in 1941 loses a third again.`,
       order: { ...base, labour: shift(here, "fields", "army", 5) },
+    });
+  }
+
+  if (n(s.plantCapacity) > 0 && steel >= RULES.tractorSteel) {
+    const could = Math.min(Math.floor(steel / RULES.tractorSteel), n(s.plantCapacity));
+    out.push({
+      title: G("Build tractors"),
+      detail: `Up to ${could} of them, at ${RULES.tractorSteel} steel each. They raise next year's harvest, not this one.`,
+      order: { ...base, build: "tractors" },
     });
   }
 
