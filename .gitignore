@@ -1,0 +1,3 @@
+# Deno keeps no lockfile here; nothing is built.
+.DS_Store
+*.log
