@@ -19,6 +19,9 @@ dependencies beyond the standard library.
                           [8805 foreign trade]
 ```
 
+The original design brief is in
+[`game-description.txt`](game-description.txt).
+
 ## The game
 
 Industrialise, and win the war in 1941. Both are paid for in the same currency.

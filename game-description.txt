@@ -1,0 +1,60 @@
+STALIN — game description
+=========================
+
+The original design brief, lightly tidied. It arrived in three parts, and
+they are kept in that order because the third one is what pulls the first two
+together.
+
+
+I. THE ECONOMY
+--------------
+
+Let's build a game using this new technology. Brainstorm first, before you
+jump in and start building.
+
+The game is called "stalin". The goal is to build tractors. To do that you
+need steel and trains.
+
+The resources are human labour and money. Money is obtained by selling grain
+to the USA — but the rural farmers have to eat that grain too.
+
+To make steel you must hire German engineers. To build railways you need
+steel. Rural farmers need grain; rural farmers can also work on the trains
+and in the steel mill.
+
+
+II. THE AIM
+-----------
+
+The aim is to build the tractors so that the agricultural output of the rural
+workforce is greater than it would have been without them — while killing as
+few peasants as possible.
+
+Peasants then become tractor drivers, railway workers and steel workers.
+
+If you are in surplus of steel you can sell steel abroad as well as grain.
+You need steel to build trains, and at the beginning you can buy steel abroad
+in exchange for grain. But the goal is to transition from exporting grain to
+exporting steel — or to export both: grain produced by the tractors, and
+steel.
+
+
+III. THE WAR
+------------
+
+Part II of the game is to use the surplus steel to build armies, and defeat
+Germany and then the USA. We will implement that later.
+
+Or perhaps there is a time limit. If you have not reached a surplus of steel
+after some finite number of turns, you cannot defeat Germany — so you have to
+decide whether to invest steel in tractors, in railways, or in the army. You
+must reach a minimum quota of surplus steel before a certain date in order to
+win. Peasants must also serve as soldiers.
+
+To fight the war you need both steel and soldiers. With less steel you have to
+sacrifice more people to win; with more steel you sacrifice fewer. So it is a
+trade-off between letting peasants starve — in order to build more railways
+and more steel — and letting soldiers die because there was not enough steel
+to equip them.
+
+The goal is to kill as few people as possible, and also to win the war.
