@@ -15,6 +15,8 @@
 \definecolor{tensor}{HTML}{1F6F4A}
 \definecolor{seq}{HTML}{1F4E8C}
 \definecolor{prod}{HTML}{9C3B1B}
+\definecolor{hdrbg}{HTML}{D6E4F5}   % headers
+\definecolor{bdybg}{HTML}{D5EDDC}   % bodies
 
 \tikzset{
   srv/.style={draw=ink, fill=white, rounded corners=2pt, inner sep=3.4pt,
@@ -489,19 +491,27 @@ do with the game; it exists so that each point can be made on its own.
 
 HTTP is a request/response protocol. A client sends a request; a server sends a response;
 nothing else happens. Here is one complete exchange, with \texttt{curl} showing both halves ---
-the lines it sent marked \texttt{>} and the lines it received marked \texttt{<}:
+the lines it sent marked \texttt{>} and the lines it received marked \texttt{<}. The
+\colorbox{hdrbg}{headers} are on a blue ground and the \colorbox{bdybg}{body} on a green one:
 
-\begin{lstlisting}[language=SH]
-> GET /books/1 HTTP/1.1
-> Host: 127.0.0.1:8099
-> Accept: */*
->
-< HTTP/1.1 200 OK
-< Content-Type: application/json
-< Content-Length: 63
-<
-{"id": 1, "title": "Dead Souls", "year": 1842, "inPrint": true}
-\end{lstlisting}
+\begin{center}
+\colorbox{codebg}{\begin{minipage}{0.95\linewidth}\ttfamily\small
+\setlength{\fboxsep}{1.5pt}\vspace{1mm}
+\mbox{> GET /books/1 HTTP/1.1}\\
+\colorbox{hdrbg}{\mbox{> Host: 127.0.0.1:8099}}\\
+\colorbox{hdrbg}{\mbox{> Accept: */*}}\\
+\mbox{>}\\
+\mbox{< HTTP/1.1 200 OK}\\
+\colorbox{hdrbg}{\mbox{< Content-Type: application/json}}\\
+\colorbox{hdrbg}{\mbox{< Content-Length: 61}}\\
+\mbox{<}\\
+\colorbox{bdybg}{\mbox{\{"id": 1, "title": "Diaspora", "year": 1997, "inPrint": true\}}}
+\vspace{1mm}
+\end{minipage}}
+\end{center}
+
+There is one body, not two: the \texttt{GET} had nothing to send, so its message ends at the
+blank line.
 
 That is the whole protocol in one screen. A request is a \emph{method} (\texttt{GET}), a
 \emph{path} (\texttt{/books/1}), some \emph{headers}, and optionally a \emph{body}. A response
@@ -570,7 +580,7 @@ book and asking it to add one differ in the verb, and the two answers differ acc
 $ curl -X GET  http://127.0.0.1:8099/books/1     -- 200 OK
 $ curl -X POST http://127.0.0.1:8099/books \
        -H 'Content-Type: application/json' \
-       -d '{"title":"The Overcoat","year":1842}'  -- 201 Created
+       -d '{"title":"Permutation City","year":1994}'  -- 201 Created
 \end{lstlisting}
 
 \subsection*{The status code says what happened}
@@ -610,7 +620,7 @@ puts that in the body:
 \begin{lstlisting}[language=SH]
 $ curl -X POST -d 'not json'      http://127.0.0.1:8099/books
 {"error": "body is not JSON"}
-$ curl -X POST -d '{"year":1842}' http://127.0.0.1:8099/books
+$ curl -X POST -d '{"year":1997}' http://127.0.0.1:8099/books
 {"error": "title is required"}
 \end{lstlisting}
 
@@ -639,7 +649,7 @@ interchangeable.
 \textbf{Place} & \textbf{Example} \\
 \midrule
 the path         & \texttt{/books/1} --- which thing \\
-the query string & \texttt{/books?year=1842} --- how to filter or sort it \\
+the query string & \texttt{/books?year=1997} --- how to filter or sort it \\
 a header         & \texttt{Content-Type: application/json} --- about the message \\
 the body         & the JSON document itself \\
 \bottomrule
@@ -671,11 +681,11 @@ others: objects, arrays, strings, numbers, booleans, and \texttt{null}.
 
 \begin{lstlisting}[language=TS]
 {
-  "title":   "Dead Souls",       // a string
-  "year":    1842,               // a number
+  "title":   "Diaspora",         // a string
+  "year":    1997,               // a number
   "inPrint": true,               // a boolean
-  "tags":    ["russian"],        // an array
-  "author":  { "name": "Gogol" },// an object
+  "tags":    ["sf"],             // an array
+  "author":  { "name": "Egan" }, // an object
   "sequel":  null                // null
 }
 \end{lstlisting}
@@ -693,10 +703,10 @@ explicitly set to \texttt{undefined}, and they are simply not there afterwards. 
 raised:
 
 \begin{lstlisting}[language=TS]
-const o = { title: "Dead Souls", year: 1842, tags: ["russian"],
+const o = { title: "Diaspora", year: 1997, tags: ["sf"],
             reissue: undefined, describe: () => "a book" };
 JSON.stringify(o)
-// {"title":"Dead Souls","year":1842,"tags":["russian"]}
+// {"title":"Diaspora","year":1997,"tags":["sf"]}
 \end{lstlisting}
 
 \textbf{One number type.} Every number is an IEEE 754 double. That is fine for a year and not
@@ -714,7 +724,7 @@ longer all representable.
 is one of the following kinds of thing''. What people do instead is agree on a field:
 
 \begin{lstlisting}[language=TS]
-JSON.parse('{"tag":"Book","title":"Dead Souls"}').tag
+JSON.parse('{"tag":"Book","title":"Diaspora"}').tag
 // "Book"  -- a string, exactly like any other string
 \end{lstlisting}
 
@@ -744,14 +754,14 @@ checker reads them, and then they are removed and ordinary JavaScript runs.
 
 \begin{lstlisting}[language=TS]
 interface Book { title: string; year: number }
-const b: Book = { title: "Dead Souls", year: "1842" };
+const b: Book = { title: "Diaspora", year: "1997" };
 \end{lstlisting}
 
 \begin{lstlisting}[language=SH]
 $ deno check t1.ts
 TS2322 [ERROR]: Type 'string' is not assignable to type 'number'.
-const b: Book = { title: "Dead Souls", year: "1842" };
-                                       ~~~~
+const b: Book = { title: "Diaspora", year: "1997" };
+                                     ~~~~
 \end{lstlisting}
 
 Nothing ran. The mistake was found by reading the program, which is the whole point of having
@@ -764,7 +774,7 @@ check derived from them. So the \texttt{as} operator is not a conversion --- it 
 that the checker accepts without verifying and the runtime cannot verify at all:
 
 \begin{lstlisting}[language=TS]
-const raw = '{"title":"Dead Souls","year":"1842"}';
+const raw = '{"title":"Diaspora","year":"1997"}';
 const b = JSON.parse(raw) as Book;   // a promise, not a check
 console.log(b.year.toFixed(0));      // compiles: year is declared number
 \end{lstlisting}
@@ -786,7 +796,7 @@ every operation on an \texttt{any} is permitted. \texttt{unknown} does the oppos
 permits nothing until you have established what you have.
 
 \begin{lstlisting}[language=TS]
-const raw: unknown = JSON.parse('{"title":"Dead Souls","year":"1842"}');
+const raw: unknown = JSON.parse('{"title":"Diaspora","year":"1997"}');
 console.log(raw.year);
 \end{lstlisting}
 
@@ -815,9 +825,9 @@ function asBook(u: unknown): Book | null {
 
 \begin{lstlisting}[language=SH]
 $ deno run t6.ts
-accepted: Dead Souls 1842
-refused: {"title":"Dead Souls","year":"1842"}
-refused: {"year":1842}
+accepted: Diaspora 1997
+refused: {"title":"Diaspora","year":"1997"}
+refused: {"year":1997}
 \end{lstlisting}
 
 Four things are deliberate. The parameter is \texttt{unknown}, so nothing can be done to it by
@@ -905,7 +915,7 @@ $ curl -i http://127.0.0.1:8098/
 HTTP/1.1 200 OK
 content-type: application/json
 
-[{"title":"Dead Souls","year":1842}]
+[{"title":"Diaspora","year":1997}]
 
 $ curl -X POST http://127.0.0.1:8098/     -- 405
 \end{lstlisting}
