@@ -411,17 +411,26 @@ seed:
 \toprule
 strategy & starved & fallen & total dead & war \\
 \midrule
-mechanise, arm late & 0 & 18 & \textbf{18} & won \\
+tractors, then armaments & 0 & 14 & \textbf{14} & won \\
+tractors only, never armed & 0 & 25 & \textbf{25} & won \\
+strip the villages, all armaments & 53 & 8 & \textbf{61} & won \\
 build nothing & 0 & 60 & \textbf{60} & lost \\
-strip the villages & 53 & 29 & \textbf{82} & lost \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-\noindent Maximum extraction loses the war holding the largest stockpile,
-because the famine destroyed the manpower the steel was meant to protect. The
-first balance pass had this backwards --- brutality scored \emph{better} --- and
-no amount of reading the code would have shown it. Only playing it did.
+\noindent Three of those win, and the two orderings disagree. Ranked by
+\emph{soldiers} lost, stripping the villages is the best plan on the board --- 8
+fallen, because the smaller army that survives is lavishly armed. Ranked by
+\emph{everyone} lost it is the worst. The game holds both numbers and declines
+to say which is the real one.
+
+An earlier balance had brutality \emph{losing} the war, and it took a remark
+from Robin to see what that was: cruelty punished by defeat is the comfortable
+version and not what happened. The thesis was not in the design, it was in a
+\verb|Math.min| capping how far materiel may stand in for men, and in the
+constant giving the worth of an unarmed soldier. Two numbers were carrying an
+argument the simulation was then read back as having discovered.
 
 \paragraph{One correction made while writing this document.} Two of the four
 combinators, \verb|supply| and \verb|build|, were originally \emph{declared and

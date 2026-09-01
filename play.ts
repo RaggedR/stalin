@@ -148,7 +148,7 @@ function narrate(r: Dict): void {
 function showState(st: Dict): void {
   const s = st.stocks as Dict;
   const w = st.workforce as Dict;
-  const alive = n(w.fields) + n(w.drivers) + n(w.mill) + n(w.rail) + n(w.army);
+  const alive = n(w.fields) + n(w.drivers) + n(w.mill) + n(w.rail);
   const pad = (x: unknown, k = 6) => String(x).padStart(k);
 
   console.log(`\n  ${B("THE COUNTRY")}   ${D(`${n(st.year)} — year ${n(st.year) - RULES.startYear + 1} of five`)}\n`);
@@ -157,8 +157,8 @@ function showState(st: Dict): void {
     D(`   ${n(w.fields)} in the fields, ${n(w.drivers)} on tractors`));
   console.log(`      in the steel mill   ${pad(w.mill)}`);
   console.log(`      on the railway      ${pad(w.rail)}`);
-  console.log(`      under arms          ${pad(w.army)}` +
-    D(`   cadre ${n(s.cadre)} of ${RULES.cadreQuota} needed`));
+  console.log(D(`      (nobody is conscripted during the plan — in 1941 the country calls up`));
+  console.log(D(`       exactly as many men as the armaments require, and no more)`));
   console.log(`\n    ${B("What you hold")}`);
   console.log(`      grain               ${pad(s.grain)}        tractors    ${pad(s.tractors)}`);
   console.log(`      steel               ${pad(s.steel)}        engineers   ${pad(s.engineers)}`);
@@ -193,13 +193,11 @@ const round = (x: number) => Math.round(x * 100) / 100;
 // ── The options ───────────────────────────────────────────────────────
 interface Order {
   procurement: Procurement;
-  labour: { fields: number; drivers: number; mill: number; rail: number; army: number };
+  labour: { fields: number; drivers: number; mill: number; rail: number };
   exportGrain: string; tradeSteel: string;
-  buy: "engineers" | "tools" | "nothing";
+  buy: "engineers" | "tools" | "tractors" | "nothing";
   build: "tractors" | "armaments";
 }
-interface Option { title: string; detail: string; order: Order }
-
 /** Move `k` people between roles, never conjuring anybody. */
 function shift(
   base: Order["labour"],
@@ -211,121 +209,105 @@ function shift(
   return l;
 }
 
+/** An option keeps its letter whether or not it is available this year.
+ *  Letters that move are worse than no letters at all: a player who learns
+ *  "E hires the engineer" and finds that E now squeezes the villages has been
+ *  handed a trap, and the game has no undo. Unavailable plans are shown greyed
+ *  with the reason, and refuse the keystroke. */
+interface Option {
+  key: string;
+  title: string;
+  detail: string;
+  order: Order;
+  why?: string;          // set when the plan is not available this year
+}
+
 function optionsFor(st: Dict): Option[] {
   const s = st.stocks as Dict;
   const w = st.workforce as Dict;
   const here: Order["labour"] = {
-    fields: n(w.fields), drivers: n(w.drivers), mill: n(w.mill),
-    rail: n(w.rail), army: n(w.army),
+    fields: n(w.fields), drivers: n(w.drivers), mill: n(w.mill), rail: n(w.rail),
   };
   const gold = n(s.gold), steel = n(s.steel), tractors = n(s.tractors);
   const canMake = Math.min(n(w.mill) * RULES.millPerWorker * 0.9, n(s.millCapacity));
   const position = canMake < RULES.steelCommitment ? "deficit"
     : canMake < RULES.steelCommitment * 1.5 ? "balanced" : "surplus";
 
+  // Two things are never actually decisions, and putting them on the menu only
+  // crowded out the ones that are.
+  //
+  //  - A driver without a tractor produces nothing and still eats, so leaving
+  //    a machine idle is never right. Drivers are assigned automatically, up to
+  //    the number of tractors.
+  // Buying steel abroad looked like another non-decision and is not: it spends
+  // grain at five to one, and that grain was the engineer. Foreign trade stays
+  // on the menu, where it belongs.
+  const autoDrivers = Math.max(0, Math.min(tractors - n(w.drivers), n(w.fields)));
+  const withDrivers = shift(here, "fields", "drivers", autoDrivers);
   const base: Order = {
-    procurement: "firm", labour: here, exportGrain: "surplus",
+    procurement: "firm", labour: withDrivers, exportGrain: "surplus",
     tradeSteel: "none", buy: "nothing", build: "tractors",
   };
-  const out: Option[] = [];
+  const needDrivers = autoDrivers;
 
-  out.push({
-    title: "Hold the course",
-    detail: "Nothing is moved. Take a third of the grain, ship what the towns do not need.",
-    order: { ...base },
-  });
-
-  out.push({
-    title: "Send men to the mill",
-    detail: `Eight off the land into the steel works. More steel, fewer hands to grow food.`,
-    order: { ...base, labour: shift(here, "fields", "mill", 8) },
-  });
-
-  out.push({
-    title: "Send men to the railway",
-    detail: "Eight off the land onto the track. The railway is what carries grain to the port.",
-    order: { ...base, labour: shift(here, "fields", "rail", 8) },
-  });
-
-  if (tractors > n(w.drivers)) {
-    const need = Math.min(tractors - n(w.drivers), n(w.fields));
-    out.push({
-      title: "Put men on the tractors",
-      detail: `${need} field hands become drivers. A tractor with nobody on it is a monument.`,
-      order: { ...base, labour: shift(here, "fields", "drivers", need) },
-    });
-  }
-
-  if (gold >= RULES.engineerGold) {
-    out.push({
-      title: "Hire a German engineer",
+  return [
+    { key: "A", title: "Hold the course",
+      detail: "Nothing is moved. Take a third of the grain, ship what the towns do not need.",
+      order: { ...base } },
+    { key: "B", title: "Send men to the mill",
+      detail: "Eight off the land into the steel works. More steel, fewer hands to grow food.",
+      order: { ...base, labour: shift(withDrivers, "fields", "mill", 8) } },
+    { key: "C", title: "Send men to the railway",
+      detail: "Eight off the land onto the track. The railway carries grain to the towns and the port.",
+      order: { ...base, labour: shift(withDrivers, "fields", "rail", 8) } },
+    { key: "D", title: "Send more men to the fields",
+      detail: "Eight back from the mill onto the land. Grain now, capacity later.",
+      order: { ...base, labour: shift(withDrivers, "mill", "fields", 8) },
+      why: n(w.mill) < 8 ? "there are not eight men in the mill" : undefined },
+    { key: "E", title: "Hire a German engineer",
       detail: `${RULES.engineerGold} in currency for ${RULES.engineerCapacity} more steel a year, permanently.`,
       order: { ...base, buy: "engineers" },
-    });
-  }
-
-  if (position === "deficit") {
-    out.push({
-      title: "Buy steel abroad",
+      why: gold < RULES.engineerGold ? `needs ${RULES.engineerGold} in currency; you have ${gold}` : undefined },
+    { key: "F", title: "Buy tractors abroad",
+      detail: `${Math.floor(gold / RULES.tractorGold)} at ${RULES.tractorGold} apiece, ready to drive. No engineer, no mill, no works — and none of those built either.`,
+      order: { ...base, buy: "tractors" },
+      why: gold < RULES.tractorGold ? `needs ${RULES.tractorGold} in currency; you have ${gold}` : undefined },
+    { key: "G", title: "Buy steel abroad",
       detail: "Grain for steel, at a poor rate. The only way to have steel before you can make it.",
       order: { ...base, tradeSteel: "buy" },
-    });
-  }
-  if (position === "surplus") {
-    out.push({
-      title: "Sell steel abroad",
-      detail: "Steel fetches twice what grain does — and grain is getting cheaper.",
+      why: position !== "deficit" ? `the mill can meet its commitments (${position})` : undefined },
+    { key: "H", title: "Sell steel abroad",
+      detail: "Steel fetches twice what grain does — and after 1930 grain fetches half what it did.",
       order: { ...base, tradeSteel: "sell" },
-    });
-  }
-
-  out.push({
-    title: "Squeeze the villages",
-    detail: R("Two thirds of the harvest, everything to the ports. People will starve."),
-    order: { ...base, procurement: "total", exportGrain: "maximum" },
-  });
-
-  out.push({
-    title: "Spare the villages",
-    detail: "A seventh of the harvest only. Nobody goes hungry; almost nothing is earned.",
-    order: { ...base, procurement: "light", exportGrain: "surplus" },
-  });
-
-  if (n(s.cadre) < RULES.cadreQuota) {
-    out.push({
-      title: "Conscript",
-      detail: `Five under arms. They eat and grow nothing — but a raw army in 1941 loses a third again.`,
-      order: { ...base, labour: shift(here, "fields", "army", 5) },
-    });
-  }
-
-  if (n(s.plantCapacity) > 0 && steel >= RULES.tractorSteel) {
-    const could = Math.min(Math.floor(steel / RULES.tractorSteel), n(s.plantCapacity));
-    out.push({
-      title: G("Build tractors"),
-      detail: `Up to ${could} of them, at ${RULES.tractorSteel} steel each. They raise next year's harvest, not this one.`,
+      why: position !== "surplus" ? `nothing spare to sell (${position})` : undefined },
+    { key: "I", title: G("Build tractors"),
+      detail: `Up to ${Math.min(Math.floor(steel / RULES.tractorSteel), n(s.plantCapacity))} of them, at ${RULES.tractorSteel} steel each. They raise next year's harvest, not this one.`,
       order: { ...base, build: "tractors" },
-    });
-  }
-
-  if (steel > 0) {
-    out.push({
-      title: Y("Put the steel by for 1941"),
-      detail: "Every tonne to armaments. It will never become a tractor, a rail or a rouble.",
-      order: { ...base, build: "armaments" },
-    });
-  }
-
-  return out;
+      why: n(s.plantCapacity) === 0 ? "there is no tractor works yet"
+         : steel < RULES.tractorSteel ? "no steel to build them from" : undefined },
+    { key: "J", title: Y("Put the steel by for 1941"),
+      detail: "Every tonne to armaments. It will never become a tractor, a rail or a rouble — and it decides how many men are called up.",
+      order: { ...base, build: "armaments", tradeSteel: "none" },
+      why: steel <= 0 ? "no steel to put by" : undefined },
+    { key: "K", title: R("Squeeze the villages"),
+      detail: "Two thirds of the harvest, everything to the ports. People will starve.",
+      order: { ...base, procurement: "total", exportGrain: "full" } },
+    { key: "L", title: "Spare the villages",
+      detail: "A seventh of the harvest only. Nobody goes hungry; almost nothing is earned.",
+      order: { ...base, procurement: "light", exportGrain: "surplus" } },
+  ];
 }
 
 function showOptions(opts: Option[]): void {
-  console.log(`\n  ${B("YOUR PLAN FOR THE YEAR")}\n`);
-  opts.forEach((o, i) => {
-    const letter = String.fromCharCode(65 + i);
-    console.log(`    ${B(letter + ".")} ${o.title}`);
-    console.log(D(`       ${o.detail}`));
-  });
+  console.log(`\n  ${B("YOUR PLAN FOR THE YEAR")}   ${D("(a plan keeps its letter all game)")}\n`);
+  for (const o of opts) {
+    if (o.why) {
+      console.log(D(`    ${o.key}. ${o.title.replace(/\x1b\[[0-9;]*m/g, "")} — not this year: ${o.why}`));
+    } else {
+      console.log(`    ${B(o.key + ".")} ${o.title}`);
+      console.log(D(`       ${o.detail}`));
+    }
+  }
 }
 
 // ── The reckoning ─────────────────────────────────────────────────────
@@ -343,7 +325,8 @@ function reckon(r: Dict): void {
     : Y("  The machines did not pay for the hands they took."));
 
   console.log(`\n${B("  1941")}`);
-  console.log(`  ${n(war.mobilised)} were called up, with ${Number(n(war.steelPerSoldier)).toFixed(2)} of steel apiece.`);
+  console.log(`  ${n(war.mobilised)} were called up of ${n(war.available)} available, with`);
+  console.log(`  ${Number(n(war.steelPerSoldier)).toFixed(2)} of steel apiece. The armaments decided how many had to go.`);
   console.log(war.won
     ? G(`  The war was won.`)
     : R(`  The war was lost. There was not enough of anything.`));
@@ -379,8 +362,12 @@ for (;;) {
     if (line === null) { console.log(D("\n  The plan is abandoned.\n")); Deno.exit(0); }
     const a = line.trim().toUpperCase();
     if (a === "") continue;
-    pick = a.charCodeAt(0) - 65;
-    if (pick < 0 || pick >= opts.length) console.log(D(`  There is no plan ${a}.`));
+    pick = opts.findIndex((o) => o.key === a);
+    if (pick < 0) console.log(D(`  There is no plan ${a}.`));
+    else if (opts[pick].why) {
+      console.log(D(`  Plan ${a} is not available this year: ${opts[pick].why}.`));
+      pick = -1;
+    }
   }
   console.log(D(`\n  ${opts[pick].title}. The orders go out.`));
   last = await ask({ tag: "Plan", order: opts[pick].order });

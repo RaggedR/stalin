@@ -6,7 +6,7 @@
 // very capacity that pays for it.
 
 import { type Grain, type People, type Steel, RULES, isNum, isRecord, isStr } from "./state.ts";
-import type { CensusReturn, Dispatch, HaulReport, RailReport } from "./containers.ts";
+import type { CensusReturn, Dispatch, HaulReport, RailReport, ResetAck } from "./containers.ts";
 import { Books, round } from "./commissariat.ts";
 import { serveContainer } from "./lib/wire.ts";
 
@@ -14,18 +14,20 @@ export type TrPrompt =
   | { tag: "Lay"; workers: People; steel: Steel; year: number }
   | { tag: "Haul"; railCapacity: number; available: Grain; needIndustry: Grain; offerPort: Grain; year: number }
   | { tag: "Report"; year: number }
-  | { tag: "Census" };
+  | { tag: "Census" }
+  | { tag: "Reset"; seed: number };
 
 export interface TrResponses {
   Lay: RailReport;
   Haul: HaulReport;
   Report: Dispatch;
   Census: CensusReturn;
+  Reset: ResetAck;
 }
 type Reply<K extends TrPrompt["tag"]> = TrResponses[K];
 
-const seed = Number(Deno.env.get("STALIN_SEED") ?? "1928");
-const books = new Books("Narkomput", seed + 4, 0.4, 0.92);
+let seed = Number(Deno.env.get("STALIN_SEED") ?? "1928");
+let books = new Books("Narkomput", seed + 4, 0.4, 0.92);
 
 let laid = 0;
 let lastQuota = 0;
@@ -60,9 +62,19 @@ const handlers: Handlers = {
   },
 
   Report: (p) => books.record(p.year, lastQuota, laid),
+  // Forget everything. `stalin new` must reach the commissariats too, or the
+  // weather stream and the books carry over into the next game.
+  Reset: (p) => {
+    seed = p.seed;
+    books = new Books("Narkomput", seed + 4, 0.4, 0.92);
+    laid = 0;
+    lastQuota = 0;
+    return { ok: true };
+  },
+
   Census: (_p): CensusReturn =>
     books.census({
-      workforce: { fields: 0, drivers: 0, mill: 0, rail: 0, army: 0, dead: 0 },
+      workforce: { fields: 0, drivers: 0, mill: 0, rail: 0, dead: 0 },
       stocks: { railCapacity: round(laid) },
     }),
 };
@@ -87,6 +99,8 @@ export function parseTr(u: unknown): TrPrompt | null {
       return isNum(u.year) ? { tag: "Report", year: u.year } : null;
     case "Census":
       return { tag: "Census" };
+    case "Reset":
+      return isNum(u.seed) ? { tag: "Reset", seed: u.seed } : null;
     default:
       return null;
   }

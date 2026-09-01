@@ -16,15 +16,17 @@ const Y = (s: string) => `\x1b[33m${s}\x1b[0m`;
 const USAGE = `stalin — the First Five-Year Plan, 1928-1932
 
   stalin new [--seed N]
-  stalin plan --labour F,D,M,R,A --procure light|firm|total
+  stalin plan --labour F,D,M,R --procure light|firm|total
               [--export none|surplus|full|maximum] [--steel none|buy|sell]
-              [--buy engineers|tools|nothing] [--build tractors|armaments]
+              [--buy engineers|tools|tractors|nothing] [--build tractors|armaments]
   stalin status
   stalin reckoning
 
-  --labour   how the living are set to work: Fields, Drivers, Mill, Rail, Army.
+  --labour   how the living are set to work: Fields, Drivers, Mill, Rail.
              Shares, normalised to the population. Drivers without tractors are
-             wasted; tractors without drivers are monuments.
+             wasted; tractors without drivers are monuments. You never conscript:
+             in 1941 the country calls up exactly as many men as the armaments
+             require, and no more.
   --procure  how hard grain is taken from the villages. What is not taken is
              what the villages eat.
   --export   how much of the state's grain is offered to the port. A failed
@@ -68,15 +70,16 @@ function showYear(r: Record<string, unknown>): void {
   console.log(B(`  ${r.year}`));
   console.log(`  harvest   ${pad(h.grain)}  (${h.grade}, ${h.perWorker}/worker)` +
     D(`   without tractors: ${h.withoutTractors}`));
+  const imp = n(r.importedTractors);
   console.log(`  steel     ${pad(r.steel)}  (${r.steelPosition})` +
-    `   tractors +${r.tractorsBuilt}   rail +${r.railAdded}`);
+    `   tractors +${n(r.tractorsBuilt) + imp}${imp > 0 ? ` (${imp} imported)` : ""}   rail +${r.railAdded}`);
   console.log(`  traded    ${pad(r.goldEarned)} gold` +
     D(`   grain out ${r.grainExported}   steel out ${r.steelExported}   steel in ${r.steelImported}`));
   console.log(`  reserve   ${pad(s.warReserve)}  for 1941` +
-    D(`   cadre ${s.cadre}   engineers ${s.engineers}   plant ${s.plantCapacity}`));
+    D(`   engineers ${s.engineers}   plant ${s.plantCapacity}`));
   const dead = n(r.dead);
   console.log(`  ${dead > 0 ? R(`dead      ${pad(dead)}`) : G(`dead      ${pad(0)}`)}` +
-    D(`   fields ${w.fields} drivers ${w.drivers} mill ${w.mill} rail ${w.rail} army ${w.army}`));
+    D(`   fields ${w.fields} drivers ${w.drivers} mill ${w.mill} rail ${w.rail}`));
   for (const d of (r.dispatches as string[]) ?? []) console.log(D(`    — ${d}`));
 }
 
@@ -90,14 +93,14 @@ switch (cmd) {
     break;
   }
   case "plan": {
-    const [f, d, m, rr, a] = flag("labour").split(",").map(Number);
-    if ([f, d, m, rr, a].some((x) => !Number.isFinite(x))) {
-      console.error("stalin: --labour wants five numbers, e.g. 90,5,10,10,5");
+    const [f, d, m, rr] = flag("labour").split(",").map(Number);
+    if ([f, d, m, rr].some((x) => !Number.isFinite(x))) {
+      console.error("stalin: --labour wants four numbers, e.g. 90,5,10,10");
       Deno.exit(2);
     }
     const r = await ask({ tag: "Plan", order: {
       procurement: flag("procure"),
-      labour: { fields: f, drivers: d, mill: m, rail: rr, army: a },
+      labour: { fields: f, drivers: d, mill: m, rail: rr },
       exportGrain: flag("export", "none"),
       tradeSteel: flag("steel", "none"),
       buy: flag("buy", "nothing"),
@@ -122,12 +125,12 @@ switch (cmd) {
     console.log(row("drivers:", w.drivers, "steel:", s.steel));
     console.log(row("mill:", w.mill, "gold:", s.gold));
     console.log(row("rail:", w.rail, "tractors:", s.tractors));
-    console.log(row("army:", w.army, "engineers:", s.engineers));
+    console.log(row("engineers:", s.engineers));
     console.log(D(`    ${"living:".padEnd(11)}${String(alive).padStart(5)}`));
     console.log(D(`    ${"dead:".padEnd(11)}${String(w.dead).padStart(5)}`));
     console.log(`\n    ${B("CAPACITY")}                  ${B("FOR 1941")}`);
     console.log(row("rail:", s.railCapacity, "reserve:", s.warReserve));
-    console.log(row("mill:", s.millCapacity, "cadre:", s.cadre));
+    console.log(row("mill:", s.millCapacity));
     console.log(row("plant:", s.plantCapacity));
 
     if (!r.over) {
@@ -151,8 +154,9 @@ switch (cmd) {
       console.log(D(`                 buy only in deficit, sell only in surplus. The mill runs BEFORE the`));
       console.log(D(`                 trade delegation, so this is re-judged in autumn — a January deficit`));
       console.log(D(`                 can be an autumn surplus. Dimmed is what January says, not autumn.`));
-      console.log(`    --buy      engineers | tools | nothing`);
-      console.log(D(`                 engineer ${RULES.engineerGold}g -> +${RULES.engineerCapacity} mill;  tools ${RULES.toolsGold}g -> +10 plant`));
+      console.log(`    --buy      engineers | tools | tractors | nothing`);
+      console.log(D(`                 engineer ${RULES.engineerGold}g -> +${RULES.engineerCapacity} mill;  tools ${RULES.toolsGold}g -> +10 plant;`));
+      console.log(D(`                 tractors ${RULES.tractorGold}g each, ready to drive — no engineer or works needed`));
       console.log(`    --build    tractors | armaments`);
       console.log(D(`                 where ALL this year's steel goes. Armaments return nothing else, ever.`));
       const gate: string[] = [];
@@ -183,10 +187,9 @@ switch (cmd) {
     console.log(D(`                multiplier ${mech.toFixed(2)}x over the same hands without tractors`));
 
     console.log(B(`\n  ${RULES.war ? RULES.warYear : 1941}`));
-    console.log(`  mobilised     ${pad(war.mobilised)}   steel each ${Number(war.steelPerSoldier).toFixed(2)}` +
-      D(`   power ${Number(war.power).toFixed(0)} of ${war.required} needed`));
-    console.log(`  outcome       ${war.won ? G("      WON") : R("     LOST")}` +
-      (war.trained ? "" : D("   (the army was raw)")));
+    console.log(`  called up     ${pad(war.mobilised)}  of ${war.available} available` +
+      D(`   ${Number(war.steelPerSoldier).toFixed(2)} of steel each`));
+    console.log(`  outcome       ${war.won ? G("      WON") : R("     LOST")}`);
 
     console.log(B("\n  THE COST"));
     console.log(`  starved       ${R(pad(starved))}`);

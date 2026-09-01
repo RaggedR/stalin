@@ -6,7 +6,7 @@
 
 import type { Fib } from "./lib/algebra.ts";
 import type {
-  Grain, HarvestGrade, People, Procurement, Readiness, Steel,
+  Grain, HarvestGrade, People, Procurement, Steel,
   SteelPosition, Stocks, Workforce,
 } from "./state.ts";
 
@@ -87,18 +87,27 @@ export function steelPlan<P extends SteelPosition>(
 }
 
 // ── Agriculture (:8802) ───────────────────────────────────────────────
+/** Every commissariat can be told to forget. Without this, `stalin new` resets
+ *  only the Plan's own ledger while the commissariats carry their weather
+ *  stream, their books and their accumulated lies into the next game — so two
+ *  games on one server are not comparable, which makes both playtesting and
+ *  any search over strategies meaningless. */
+export interface ResetAck { ok: boolean }
+
 export type AgricultureC =
   | Fib<{ tag: "Harvest"; workforce: Workforce; tractors: number; year: number },
         HarvestReport>
   | Fib<{ tag: "Winter"; ruralRations: Grain; industrialRations: Grain; year: number }, WinterReport>
   | Fib<{ tag: "Report"; year: number }, Dispatch>
-  | Fib<{ tag: "Census" }, CensusReturn>;
+  | Fib<{ tag: "Census" }, CensusReturn>
+  | Fib<{ tag: "Reset"; seed: number }, ResetAck>;
 
 // ── Heavy industry (:8803) ────────────────────────────────────────────
 export type SmelterC =
   | Fib<{ tag: "Smelt"; workers: People; millCapacity: number; year: number }, SmeltReport>
   | Fib<{ tag: "Report"; year: number }, Dispatch>
-  | Fib<{ tag: "Census" }, CensusReturn>;
+  | Fib<{ tag: "Census" }, CensusReturn>
+  | Fib<{ tag: "Reset"; seed: number }, ResetAck>;
 
 /** The two sides of the game's central product. Same steel, one contract. */
 export type TractorWorksC =
@@ -111,7 +120,8 @@ export type TransportC =
   | Fib<{ tag: "Lay"; workers: People; steel: Steel; year: number }, RailReport>
   | Fib<{ tag: "Haul"; railCapacity: number; available: Grain; needIndustry: Grain; offerPort: Grain; year: number }, HaulReport>
   | Fib<{ tag: "Report"; year: number }, Dispatch>
-  | Fib<{ tag: "Census" }, CensusReturn>;
+  | Fib<{ tag: "Census" }, CensusReturn>
+  | Fib<{ tag: "Reset"; seed: number }, ResetAck>;
 
 // ── Foreign trade (:8805) ─────────────────────────────────────────────
 // The two sale containers are separate so the trade can be a PRODUCT when the
@@ -129,18 +139,13 @@ export type ForeignTradeC =
   | Fib<{ tag: "BuySteel"; grain: Grain; year: number }, PurchaseReport>
   | Fib<{ tag: "Hire"; gold: number; want: "engineers" | "tools"; year: number },
         { engineers: number; plantCapacity: number; goldUsed: number }>
+  | Fib<{ tag: "BuyTractors"; gold: number; year: number },
+        { tractors: number; goldUsed: number }>
   | Fib<{ tag: "Report"; year: number }, Dispatch>
-  | Fib<{ tag: "Census" }, CensusReturn>;
+  | Fib<{ tag: "Census" }, CensusReturn>
+  | Fib<{ tag: "Reset"; seed: number }, ResetAck>;
 
 // ── The verdict on 1941 ───────────────────────────────────────────────
-export interface Verdict {
-  readiness: Readiness;
-  warReserve: Steel;
-  cadre: People;
-  quota: Steel;
-  projectedYear: number | null;
-}
-
 // ── The year's report, amalgamated at the top ─────────────────────────
 export interface YearReport {
   year: number;
@@ -148,6 +153,7 @@ export interface YearReport {
   steel: Steel;
   steelPosition: SteelPosition;
   tractorsBuilt: number;
+  importedTractors: number;
   railAdded: number;
   goldEarned: number;
   grainExported: Grain;

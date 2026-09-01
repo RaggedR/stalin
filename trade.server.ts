@@ -8,7 +8,7 @@
 // written down.
 
 import { type Gold, type Grain, type Steel, RULES, isNum, isRecord, isStr } from "./state.ts";
-import type { CensusReturn, Dispatch, PurchaseReport, SaleReport } from "./containers.ts";
+import type { CensusReturn, Dispatch, PurchaseReport, ResetAck, SaleReport } from "./containers.ts";
 import { Books, round } from "./commissariat.ts";
 import { serveContainer } from "./lib/wire.ts";
 
@@ -17,28 +17,33 @@ export type TdPrompt =
   | { tag: "SellSteel"; steel: Steel; year: number }
   | { tag: "BuySteel"; grain: Grain; year: number }
   | { tag: "Hire"; gold: Gold; want: "engineers" | "tools"; year: number }
+  | { tag: "BuyTractors"; gold: Gold; year: number }
   | { tag: "Report"; year: number }
-  | { tag: "Census" };
+  | { tag: "Census" }
+  | { tag: "Reset"; seed: number };
 
 export interface TdResponses {
   SellGrain: SaleReport;
   SellSteel: SaleReport;
   BuySteel: PurchaseReport;
   Hire: { engineers: number; plantCapacity: number; goldUsed: number };
+  BuyTractors: { tractors: number; goldUsed: number };
   Report: Dispatch;
   Census: CensusReturn;
+  Reset: ResetAck;
 }
 type Reply<K extends TdPrompt["tag"]> = TdResponses[K];
 
-const seed = Number(Deno.env.get("STALIN_SEED") ?? "1928");
+let seed = Number(Deno.env.get("STALIN_SEED") ?? "1928");
 // The trade delegation had the least room to lie: the gold either arrived or
 // it did not.
-const books = new Books("Narkomvneshtorg", seed + 5, 0.1, 1.0);
+let books = new Books("Narkomvneshtorg", seed + 5, 0.1, 1.0);
 
 let goldEarned = 0;
 let grainSold = 0;
 let steelSold = 0;
 let steelBought = 0;
+let tractorsBought = 0;
 
 /** 1930: the world grain price collapses. This is the Depression, and it is
  *  the event that punishes a plan built on stable prices — historically it is
@@ -86,10 +91,31 @@ const handlers: Handlers = {
     return { engineers: 0, plantCapacity: n * 10, goldUsed: n * RULES.toolsGold };
   },
 
+  // Tractors bought ready-made. No engineer, no mill, no works — and no
+  // capacity either: every one of them is bought again next time.
+  BuyTractors: (p) => {
+    const bought = Math.floor(p.gold / RULES.tractorGold);
+    tractorsBought += bought;
+    return { tractors: bought, goldUsed: bought * RULES.tractorGold };
+  },
+
   Report: (p) => books.record(p.year, round(goldEarned), round(goldEarned)),
+  // Forget everything. `stalin new` must reach the commissariats too, or the
+  // weather stream and the books carry over into the next game.
+  Reset: (p) => {
+    seed = p.seed;
+    books = new Books("Narkomvneshtorg", seed + 5, 0.1, 1.0);
+    goldEarned = 0;
+    grainSold = 0;
+    steelSold = 0;
+    steelBought = 0;
+    tractorsBought = 0;
+    return { ok: true };
+  },
+
   Census: (_p): CensusReturn =>
     books.census({
-      workforce: { fields: 0, drivers: 0, mill: 0, rail: 0, army: 0, dead: 0 },
+      workforce: { fields: 0, drivers: 0, mill: 0, rail: 0, dead: 0 },
       stocks: { gold: round(goldEarned), steel: round(steelBought) },
     }),
 };
@@ -111,10 +137,15 @@ export function parseTd(u: unknown): TdPrompt | null {
     case "Hire":
       return isNum(u.gold) && isNum(u.year) && (u.want === "engineers" || u.want === "tools")
         ? { tag: "Hire", gold: u.gold, want: u.want, year: u.year } : null;
+    case "BuyTractors":
+      return isNum(u.gold) && isNum(u.year)
+        ? { tag: "BuyTractors", gold: u.gold, year: u.year } : null;
     case "Report":
       return isNum(u.year) ? { tag: "Report", year: u.year } : null;
     case "Census":
       return { tag: "Census" };
+    case "Reset":
+      return isNum(u.seed) ? { tag: "Reset", seed: u.seed } : null;
     default:
       return null;
   }

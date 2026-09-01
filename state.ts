@@ -24,7 +24,6 @@ export interface Stocks {
   millCapacity: number;   // steel-units producible per year
   plantCapacity: number;  // tractors buildable per year
   warReserve: Steel;      // steel put by for armaments — returns NOTHING
-  cadre: People;          // accumulated army-years: men who have been trained
 }
 
 /** Where the workforce is. Only `dead` is a loss; the rest is the transition
@@ -34,12 +33,11 @@ export interface Workforce {
   drivers: People;   // a tractor without a driver is a monument
   mill: People;
   rail: People;
-  army: People;      // eat, produce nothing, and are the only hedge on 1941
   dead: People;
 }
 
 export const living = (w: Workforce): People =>
-  w.fields + w.drivers + w.mill + w.rail + w.army;
+  w.fields + w.drivers + w.mill + w.rail;
 export const rural = (w: Workforce): People => w.fields + w.drivers;
 export const industrial = (w: Workforce): People => w.mill + w.rail;
 
@@ -55,11 +53,6 @@ export const HARVEST_GRADES: HarvestGrade[] = ["failure", "poor", "adequate", "b
  *  surplus and sell. */
 export type SteelPosition = "deficit" | "balanced" | "surplus";
 
-/** The verdict on 1941, projected from where the plan leaves the country.
- *  Part II is not built; the DEADLINE is, because knowing it is coming is what
- *  makes the 1928 decision hard. Steel spent on armaments returns nothing at
- *  all unless the date is real. */
-export type Readiness = "defenceless" | "vulnerable" | "prepared";
 
 /** How hard grain is taken from the villages. */
 export type Procurement = "light" | "firm" | "total";
@@ -91,14 +84,17 @@ export const RULES = {
   steelCommitment: 15.0,
   // Armaments: steel straight into the reserve, and men who must be trained
   // for years before they are soldiers rather than peasants holding rifles.
-  warQuota: 40,           // reserve below which the war is simply lost
-  cadreQuota: 10,         // army-years below which the troops are raw
   warYear: 1941,
   plantSteel: 20.0,
   plantRail: 10.0,
   plantCapacity: 20,      // tractors per year per plant
 
   engineerGold: 15,
+  /** A tractor bought abroad, ready to drive. Expensive against building your
+   *  own (2 steel), and it buys no capacity — but it needs no engineer, no
+   *  mill and no works, so it is the only mechanisation available in the first
+   *  years. The Fordsons came in by the thousand before Stalingrad opened. */
+  tractorGold: 10,
   toolsGold: 25,          // machine tools: +10 plant capacity, no upkeep
 
   grainPerGold: 3.0,      // grain sold to buy one gold
@@ -120,50 +116,70 @@ export const RULES = {
   war: {
     mobilisableFraction: 0.5, // the rest must farm, or the army starves too
     enemyPower: 70,
-    manPower: 0.5,            // power of one soldier with nothing to fire
-    steelPower: 1.2,          // power added by steel, up to one unit per man
+    // What one soldier is worth with nothing to fire. This is the number that
+    // decides whether men alone can win. Too low and a well-fed, lightly-armed
+    // country loses outright, which forces every player down the armaments
+    // road and collapses the game to one strategy. Set here so that a large
+    // population CAN win on numbers — and pays for it in bodies.
+    manPower: 0.8,
+    steelPower: 1.2,          // power added by steel
+    // How far materiel can stand in for men. This number decides whether the
+    // game is a morality play. Capped at 1, a famine is strategically fatal —
+    // cruelty punished by defeat, which is comfortable and false. Set high
+    // enough, a small lavishly-equipped army wins, and starving the villages
+    // becomes what it actually was: a way to win the war that cost more lives
+    // than the alternative. The game keeps the body count and passes no
+    // judgement on it.
+    maxSubstitution: 2.0,
     baseAttrition: 0.55,      // fraction lost with no steel at all
     steelShield: 0.9,         // how fast attrition falls as steel per man rises
-    rawPenalty: 0.35,         // extra attrition for an untrained army
   },
 } as const;
 
 export interface WarOutcome {
   won: boolean;
   mobilised: People;
+  available: People;
   steelPerSoldier: number;
-  power: number;
-  required: number;
   attrition: number;
   fallen: People;
-  trained: boolean;
 }
 
-/** The reckoning of 1941. Note where the two halves of the game meet: the
- *  manpower pool is the population that SURVIVED the plan, so every peasant
- *  starved to make steel is also a soldier absent from the line. The trade-off
- *  is not between two independent quantities; pushing on one degrades the
- *  other, which is what puts the optimum in the interior. */
-export function fightWar(survivors: People, warReserve: Steel, cadre: People): WarOutcome {
+/** The reckoning of 1941.
+ *
+ *  You never conscript during the plan. When the war comes the country calls
+ *  up exactly as many men as it takes to reach the enemy's strength, given the
+ *  armaments it has — and no more. So the armaments decide the size of the
+ *  army, and the size of the army decides the dead.
+ *
+ *  Power is  m · manPower + steelPower · min(W, m · maxSubstitution):  each man
+ *  is worth something on his own, and worth more up to the point where he is
+ *  fully equipped. Solving for the smallest m that reaches the threshold gives
+ *  two regimes — steel-rich, where a small lavish army suffices, and steel-poor,
+ *  where the shortfall is made up in bodies. If even the whole available
+ *  manpower cannot reach it, the war is lost.
+ */
+export function fightWar(survivors: People, warReserve: Steel): WarOutcome {
   const w = RULES.war;
-  const mobilised = Math.max(1, Math.floor(survivors * w.mobilisableFraction));
-  const steelPerSoldier = warReserve / mobilised;
-  const equipped = Math.min(steelPerSoldier, 1);
-  const power = mobilised * (w.manPower + w.steelPower * equipped);
-  const trained = cadre >= RULES.cadreQuota;
-  // Steel buys lives back, but not without limit: past about a rifle and a
-  // half per man, more steel in the depot saves nobody. Hoarding is not a
-  // substitute for having an army.
-  const useful = Math.min(steelPerSoldier, 1.5);
+  const available = Math.max(1, Math.floor(survivors * w.mobilisableFraction));
+  const E = w.enemyPower;
+
+  // Regime 1: enough steel to equip everyone called up.
+  const lavish = E / (w.manPower + w.steelPower * w.maxSubstitution);
+  // Regime 2: the steel runs out, and the rest is made up in men.
+  const lean = (E - w.steelPower * warReserve) / w.manPower;
+  const needed = lavish <= warReserve / w.maxSubstitution ? lavish : lean;
+
+  const mobilised = Math.max(1, Math.ceil(needed));
+  const won = mobilised <= available;
+  const called = won ? mobilised : available;
+  const steelPerSoldier = warReserve / called;
   const attrition = Math.min(
-    1,
-    (w.baseAttrition / (1 + w.steelShield * useful)) * (trained ? 1 : 1 + w.rawPenalty),
+    1, w.baseAttrition / (1 + w.steelShield * Math.min(steelPerSoldier, 1.5)),
   );
-  const won = power >= w.enemyPower;
   // A war lost is not a war with fewer casualties.
-  const fallen = won ? Math.round(mobilised * attrition) : mobilised;
-  return { won, mobilised, steelPerSoldier, power, required: w.enemyPower,
-           attrition, fallen, trained };
+  const fallen = won ? Math.round(called * attrition) : called;
+  return { won, mobilised: called, available, steelPerSoldier, attrition, fallen };
 }
 
 // ── The grade of a harvest, from the tonnage and the mouths ───────────
@@ -184,18 +200,6 @@ export function gradeSteel(steel: Steel, committed: Steel): SteelPosition {
 export const throughputOf = (railCapacity: number): Throughput =>
   railCapacity >= RULES.wideThroughput ? "wide" : "narrow";
 
-/** The verdict is the WORSE of steel and men: a reserve nobody is trained to
- *  use is a stockpile, and a cadre with nothing to fire is a parade. */
-export function gradeReadiness(warReserve: Steel, cadre: People): Readiness {
-  const steelGrade: Readiness = warReserve >= RULES.warQuota
-    ? "prepared"
-    : warReserve >= RULES.warQuota / 3 ? "vulnerable" : "defenceless";
-  const menGrade: Readiness = cadre >= RULES.cadreQuota
-    ? "prepared"
-    : cadre >= RULES.cadreQuota / 3 ? "vulnerable" : "defenceless";
-  const rank = { defenceless: 0, vulnerable: 1, prepared: 2 };
-  return rank[steelGrade] <= rank[menGrade] ? steelGrade : menGrade;
-}
 
 // ── A deterministic generator, so a playthrough is a regression test ──
 export function rng(seed: number): () => number {
@@ -221,14 +225,12 @@ export const isSteelPosition = (u: unknown): u is SteelPosition =>
   u === "deficit" || u === "balanced" || u === "surplus";
 export const isProcurement = (u: unknown): u is Procurement =>
   u === "light" || u === "firm" || u === "total";
-export const isReadiness = (u: unknown): u is Readiness =>
-  u === "defenceless" || u === "vulnerable" || u === "prepared";
 
 export function asStocks(u: unknown): Stocks | null {
   if (!isRecord(u)) return null;
   const keys = ["grain", "steel", "gold", "tractors", "engineers",
                 "railCapacity", "millCapacity", "plantCapacity",
-                "warReserve", "cadre"] as const;
+                "warReserve"] as const;
   const out = {} as Stocks;
   for (const k of keys) {
     if (!isNum(u[k])) return null;
@@ -239,7 +241,7 @@ export function asStocks(u: unknown): Stocks | null {
 
 export function asWorkforce(u: unknown): Workforce | null {
   if (!isRecord(u)) return null;
-  const keys = ["fields", "drivers", "mill", "rail", "army", "dead"] as const;
+  const keys = ["fields", "drivers", "mill", "rail", "dead"] as const;
   const out = {} as Workforce;
   for (const k of keys) {
     if (!isNum(u[k])) return null;

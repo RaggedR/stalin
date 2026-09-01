@@ -46,11 +46,13 @@ const agri = leaf<AgricultureC>("agri", AGRI, {
   Winter: (u) => rec(["fed", "dead", "shortfall"], u),
   Report: (u) => rec(["year", "quotaMet", "output", "note"], u),
   Census: (u) => rec(["workforce", "stocks", "trueOutput"], u),
+  Reset: (u) => rec(["ok"], u),
 });
 const smelter = leaf<SmelterC>("smelter", IND, {
   Smelt: (u) => rec(["steel", "idleCapacity"], u),
   Report: (u) => rec(["year", "quotaMet", "output", "note"], u),
   Census: (u) => rec(["workforce", "stocks", "trueOutput"], u),
+  Reset: (u) => rec(["ok"], u),
 });
 const tractorWorks = leaf<TractorWorksC>("tractors", IND, {
   BuildTractors: (u) => rec(["built", "steelUsed"], u),
@@ -63,6 +65,7 @@ const transport = leaf<TransportC>("transport", TR, {
   Haul: (u) => rec(["toIndustry", "toPort", "stranded", "short"], u),
   Report: (u) => rec(["year", "quotaMet", "output", "note"], u),
   Census: (u) => rec(["workforce", "stocks", "trueOutput"], u),
+  Reset: (u) => rec(["ok"], u),
 });
 const grainSale = leaf<GrainSaleC>("grainSale", TD, {
   SellGrain: (u) => rec(["gold", "price", "sold"], u),
@@ -75,8 +78,10 @@ const trade = leaf<ForeignTradeC>("trade", TD, {
   SellSteel: (u) => rec(["gold", "price", "sold"], u),
   BuySteel: (u) => rec(["steel", "grainUsed"], u),
   Hire: (u) => rec(["engineers", "plantCapacity", "goldUsed"], u),
+  BuyTractors: (u) => rec(["tractors", "goldUsed"], u),
   Report: (u) => rec(["year", "quotaMet", "output", "note"], u),
   Census: (u) => rec(["workforce", "stocks", "trueOutput"], u),
+  Reset: (u) => rec(["ok"], u),
 });
 
 // ── The workflow algebra ──────────────────────────────────────────────
@@ -114,8 +119,8 @@ const fresh = (seed: number): Game => ({
   // and a railway that already reached somewhere.
   stocks: { grain: 40, steel: 10, gold: 0, tractors: 0, engineers: 0,
             railCapacity: 60, millCapacity: 8, plantCapacity: 0,
-            warReserve: 0, cadre: 0 },
-  workforce: { fields: 105, drivers: 0, mill: 8, rail: 7, army: 0, dead: 0 },
+            warReserve: 0 },
+  workforce: { fields: 105, drivers: 0, mill: 8, rail: 7, dead: 0 },
   baselineOutput: 0,
   baselineRural: 105,
   history: [],
@@ -178,10 +183,10 @@ function resolveSteel(steel: Steel, committed: Steel, want: string):
 
 export interface PlanOrder {
   procurement: Procurement;
-  labour: { fields: number; drivers: number; mill: number; rail: number; army: number };
+  labour: { fields: number; drivers: number; mill: number; rail: number };
   exportGrain: string;
   tradeSteel: string;
-  buy: "engineers" | "tools" | "nothing";
+  buy: "engineers" | "tools" | "tractors" | "nothing";
   /** Where this year's steel goes. Not a share: a decision. The two works are
    *  separate containers so the Plan takes their PRODUCT — both offered, one
    *  answered — and a year's steel cannot be quietly spent on both. */
@@ -201,13 +206,18 @@ async function runYear(order: PlanOrder, depth: number): Promise<YearReport> {
   // Allocate. Nobody may be conjured: the shares are normalised to the living.
   const alive = living(game.workforce);
   const l = order.labour;
-  const asked = l.fields + l.drivers + l.mill + l.rail + l.army;
+  const asked = l.fields + l.drivers + l.mill + l.rail;
   const k = asked > 0 ? alive / asked : 0;
+  // Flooring four shares independently loses up to three people a year, and
+  // they never come back. Whatever the rounding drops goes to the fields, so
+  // an allocation moves people around and never destroys any: the only thing
+  // in this game that reduces the population is starvation.
   const w: Workforce = {
     fields: Math.floor(l.fields * k), drivers: Math.floor(l.drivers * k),
     mill: Math.floor(l.mill * k), rail: Math.floor(l.rail * k),
-    army: Math.floor(l.army * k), dead: game.workforce.dead,
+    dead: game.workforce.dead,
   };
+  w.fields += alive - (w.fields + w.drivers + w.mill + w.rail);
   game.workforce = w;
 
   // ── TENSOR then CHAIN. The three sectors work at once and all three owe a
@@ -217,7 +227,7 @@ async function runYear(order: PlanOrder, depth: number): Promise<YearReport> {
   trace(depth, "down", "gosplan", supply.label);
   const railSteel = Math.min(s.steel, w.rail * RULES.railPerWorker * RULES.railSteelCost);
   const take = RULES.procurement[order.procurement];
-  const indMouths = w.mill + w.rail + w.army;
+  const indMouths = w.mill + w.rail;
 
   // `next` is a pure function of the first container's position, so what it
   // decides has to be recovered afterwards rather than assigned inside it.
@@ -265,7 +275,6 @@ async function runYear(order: PlanOrder, depth: number): Promise<YearReport> {
 
   s.steel = round(s.steel - rail.steelUsed + smelt.steel);
   s.railCapacity = round(s.railCapacity + rail.added);
-  s.cadre = round(s.cadre + w.army);
 
   const stateGrain = round(harvest.grain * take + s.grain);
   const villageGrain = round(harvest.grain * (1 - take));
@@ -273,6 +282,7 @@ async function runYear(order: PlanOrder, depth: number): Promise<YearReport> {
   // ── The trade. Which moves exist here was decided by the harvest grade and
   //    the steel position; `resolveExport`/`resolveSteel` are where the finite
   //    Sigma is eliminated, and past them nothing illegal can be constructed.
+  let importedTractors = 0;
   const committed = RULES.steelCommitment;
   // The position is production against commitment, not the residue after a
   // year's spending. A country that smelts thirty and spends thirty is not in
@@ -315,8 +325,16 @@ async function runYear(order: PlanOrder, depth: number): Promise<YearReport> {
   }
   s.gold = round(s.gold + gold);
 
-  if (order.buy !== "nothing" && s.gold > 0) {
-    const bought = await trade.run({ tag: "Hire", gold: s.gold, want: order.buy, year }, depth);
+  if (order.buy === "tractors" && s.gold > 0) {
+    // The other road to mechanisation: buy them ready-made. It needs no
+    // engineer, no mill and no works — and it builds none of those either.
+    const bought = await trade.run({ tag: "BuyTractors", gold: s.gold, year }, depth);
+    s.gold = round(s.gold - bought.goldUsed);
+    s.tractors += bought.tractors;
+    importedTractors = bought.tractors;
+  } else if (order.buy !== "nothing" && s.gold > 0) {
+    const bought = await trade.run(
+      { tag: "Hire", gold: s.gold, want: order.buy as "engineers" | "tools", year }, depth);
     s.gold = round(s.gold - bought.goldUsed);
     s.engineers += bought.engineers;
     s.millCapacity = round(s.millCapacity + bought.engineers * RULES.engineerCapacity);
@@ -366,13 +384,12 @@ async function runYear(order: PlanOrder, depth: number): Promise<YearReport> {
   const shrink = (n: number, loss: number, pool: number) =>
     pool <= 0 ? n : Math.max(0, n - Math.round(loss * (n / pool)));
   const ruralPool = w.fields + w.drivers;
-  const indPool = w.mill + w.rail + w.army;
+  const indPool = w.mill + w.rail;
   game.workforce = {
     fields: shrink(w.fields, ruralLoss, ruralPool),
     drivers: shrink(w.drivers, ruralLoss, ruralPool),
     mill: shrink(w.mill, indLoss, indPool),
     rail: shrink(w.rail, indLoss, indPool),
-    army: shrink(w.army, indLoss, indPool),
     dead: w.dead + dead,
   };
 
@@ -391,7 +408,7 @@ async function runYear(order: PlanOrder, depth: number): Promise<YearReport> {
   game.dispatches.push(...notes);
 
   const report: YearReport = {
-    year, harvest, steel: s.steel, steelPosition: gradeSteel(smelt.steel, committed),
+    year, harvest, steel: s.steel, importedTractors, steelPosition: gradeSteel(smelt.steel, committed),
     tractorsBuilt, railAdded: rail.added, goldEarned: gold,
     grainExported: round(grainExported), steelExported, steelImported,
     dead, workforce: game.workforce, stocks: { ...s },
@@ -419,6 +436,13 @@ export type GosReply =
 async function answer(p: GosPrompt, depth: number): Promise<GosReply> {
   switch (p.tag) {
     case "Reset":
+      // The Plan forgetting is not enough: each commissariat carries its own
+      // weather stream, its own books and its own accumulated overstatement.
+      // Without this fan-out, two games on one server are not comparable.
+      await agri.run({ tag: "Reset", seed: p.seed }, depth);
+      await smelter.run({ tag: "Reset", seed: p.seed }, depth);
+      await transport.run({ tag: "Reset", seed: p.seed }, depth);
+      await trade.run({ tag: "Reset", seed: p.seed }, depth);
       game = fresh(p.seed);
       return { kind: "status", year: game.year, over: false, stocks: game.stocks,
                workforce: game.workforce, believed: 0, baseline: 0 };
@@ -431,7 +455,7 @@ async function answer(p: GosPrompt, depth: number): Promise<GosReply> {
                baseline: game.baselineOutput };
     case "Reckoning": {
       const survivors = living(game.workforce);
-      const war = fightWar(survivors, game.stocks.warReserve, game.stocks.cadre);
+      const war = fightWar(survivors, game.stocks.warReserve);
       const last = game.history[game.history.length - 1];
       const censuses = [
         await agri.run({ tag: "Census" }, depth),
@@ -469,16 +493,17 @@ export function parseGos(u: unknown): GosPrompt | null {
       if (!isRecord(o) || !isProcurement(o.procurement)) return null;
       const l = o.labour;
       if (!isRecord(l)) return null;
-      for (const k of ["fields", "drivers", "mill", "rail", "army"]) {
+      for (const k of ["fields", "drivers", "mill", "rail"]) {
         if (!isNum(l[k])) return null;
       }
       if (!isStr(o.exportGrain) || !isStr(o.tradeSteel)) return null;
-      if (o.buy !== "engineers" && o.buy !== "tools" && o.buy !== "nothing") return null;
+      if (o.buy !== "engineers" && o.buy !== "tools" && o.buy !== "tractors" &&
+          o.buy !== "nothing") return null;
       if (o.build !== "tractors" && o.build !== "armaments") return null;
       return { tag: "Plan", order: {
         procurement: o.procurement,
         labour: { fields: l.fields as number, drivers: l.drivers as number,
-                  mill: l.mill as number, rail: l.rail as number, army: l.army as number },
+                  mill: l.mill as number, rail: l.rail as number },
         exportGrain: o.exportGrain, tradeSteel: o.tradeSteel,
         buy: o.buy, build: o.build,
       } };

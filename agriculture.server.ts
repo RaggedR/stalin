@@ -9,6 +9,7 @@ import {
 } from "./state.ts";
 import type {
   AgricultureC, CensusReturn, Dispatch, HarvestReport, WinterReport,
+  ResetAck,
 } from "./containers.ts";
 import { Books, clamp, round } from "./commissariat.ts";
 import { serveContainer } from "./lib/wire.ts";
@@ -17,19 +18,21 @@ export type AgPrompt =
   | { tag: "Harvest"; workforce: Workforce; tractors: number; year: number }
   | { tag: "Winter"; ruralRations: Grain; industrialRations: Grain; year: number }
   | { tag: "Report"; year: number }
-  | { tag: "Census" };
+  | { tag: "Census" }
+  | { tag: "Reset"; seed: number };
 
 export interface AgResponses {
   Harvest: HarvestReport;
   Winter: WinterReport;
   Report: Dispatch;
   Census: CensusReturn;
+  Reset: ResetAck;
 }
 type Reply<K extends AgPrompt["tag"]> = AgResponses[K];
 
-const seed = Number(Deno.env.get("STALIN_SEED") ?? "1928");
-const books = new Books("Narkomzem", seed + 2, 0.55, 0.95);
-const weather = rng(seed + 11);
+let seed = Number(Deno.env.get("STALIN_SEED") ?? "1928");
+let books = new Books("Narkomzem", seed + 2, 0.55, 0.95);
+let weather = rng(seed + 11);
 
 let lastHarvest: HarvestReport | null = null;
 let lastWorkforce: Workforce | null = null;
@@ -57,7 +60,7 @@ const handlers: Handlers = {
     // tractors at all. Drivers go back to the fields; the machines rust.
     const withoutTractors = round((w.fields + w.drivers) * RULES.fieldYield * modifier);
 
-    const mouths = w.fields + w.drivers + w.mill + w.rail + w.army;
+    const mouths = w.fields + w.drivers + w.mill + w.rail;
     const report: HarvestReport = {
       grain,
       grade: gradeHarvest(grain, mouths),
@@ -80,7 +83,7 @@ const handlers: Handlers = {
     // railway actually delivered. Moving a peasant to the mill moves him from
     // the first column to the second.
     const ruralMouths = w.fields + w.drivers;
-    const indMouths = w.mill + w.rail + w.army;
+    const indMouths = w.mill + w.rail;
 
     const ruralShort = Math.max(0, ruralMouths * RULES.eats - p.ruralRations);
     const indShort = Math.max(0, indMouths * RULES.eats - p.industrialRations);
@@ -102,9 +105,21 @@ const handlers: Handlers = {
     return books.record(p.year, round(quota), h ? h.grain : 0);
   },
 
+  // Forget everything. `stalin new` must reach the commissariats too, or the
+  // weather stream and the books carry over into the next game.
+  Reset: (p) => {
+    seed = p.seed;
+    books = new Books("Narkomzem", seed + 2, 0.55, 0.95);
+    weather = rng(seed + 11);
+    lastHarvest = null;
+    lastWorkforce = null;
+    starved = 0;
+    return { ok: true };
+  },
+
   Census: (_p): CensusReturn =>
     books.census({
-      workforce: lastWorkforce ?? { fields: 0, drivers: 0, mill: 0, rail: 0, army: 0, dead: starved },
+      workforce: lastWorkforce ?? { fields: 0, drivers: 0, mill: 0, rail: 0, dead: starved },
       stocks: { grain: lastHarvest ? lastHarvest.grain : 0 },
     }),
 };
@@ -130,6 +145,8 @@ export function parseAg(u: unknown): AgPrompt | null {
       return isNum(u.year) ? { tag: "Report", year: u.year } : null;
     case "Census":
       return { tag: "Census" };
+    case "Reset":
+      return isNum(u.seed) ? { tag: "Reset", seed: u.seed } : null;
     default:
       return null;
   }

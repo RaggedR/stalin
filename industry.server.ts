@@ -8,6 +8,7 @@
 import { type People, type Steel, RULES, isNum, isRecord, isStr } from "./state.ts";
 import type {
   ArmamentReport, CensusReturn, Dispatch, SmeltReport, TractorReport,
+  ResetAck,
 } from "./containers.ts";
 import { Books, round } from "./commissariat.ts";
 import { serveContainer } from "./lib/wire.ts";
@@ -17,7 +18,8 @@ export type IndPrompt =
   | { tag: "BuildTractors"; steel: Steel; plantCapacity: number; year: number }
   | { tag: "BuildArmaments"; steel: Steel; year: number }
   | { tag: "Report"; year: number }
-  | { tag: "Census" };
+  | { tag: "Census" }
+  | { tag: "Reset"; seed: number };
 
 export interface IndResponses {
   Smelt: SmeltReport;
@@ -25,12 +27,13 @@ export interface IndResponses {
   BuildArmaments: ArmamentReport;
   Report: Dispatch;
   Census: CensusReturn;
+  Reset: ResetAck;
 }
 type Reply<K extends IndPrompt["tag"]> = IndResponses[K];
 
-const seed = Number(Deno.env.get("STALIN_SEED") ?? "1928");
+let seed = Number(Deno.env.get("STALIN_SEED") ?? "1928");
 // Heavy industry was the loudest and the least honest of the commissariats.
-const books = new Books("Narkomtiazhprom", seed + 3, 0.75, 0.9);
+let books = new Books("Narkomtiazhprom", seed + 3, 0.75, 0.9);
 
 let lastSteel = 0;
 let lastQuota = 0;
@@ -67,9 +70,21 @@ const handlers: Handlers = {
 
   Report: (p) => books.record(p.year, lastQuota, lastSteel),
 
+  // Forget everything. `stalin new` must reach the commissariats too, or the
+  // weather stream and the books carry over into the next game.
+  Reset: (p) => {
+    seed = p.seed;
+    books = new Books("Narkomtiazhprom", seed + 3, 0.75, 0.9);
+    lastSteel = 0;
+    lastQuota = 0;
+    tractorsBuilt = 0;
+    reserved = 0;
+    return { ok: true };
+  },
+
   Census: (_p): CensusReturn =>
     books.census({
-      workforce: { fields: 0, drivers: 0, mill: 0, rail: 0, army: 0, dead: 0 },
+      workforce: { fields: 0, drivers: 0, mill: 0, rail: 0, dead: 0 },
       stocks: { steel: lastSteel, tractors: tractorsBuilt, warReserve: reserved },
     }),
 };
@@ -95,6 +110,8 @@ export function parseInd(u: unknown): IndPrompt | null {
       return isNum(u.year) ? { tag: "Report", year: u.year } : null;
     case "Census":
       return { tag: "Census" };
+    case "Reset":
+      return isNum(u.seed) ? { tag: "Reset", seed: u.seed } : null;
     default:
       return null;
   }

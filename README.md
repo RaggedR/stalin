@@ -47,20 +47,41 @@ is a soldier missing in 1941, so extracting harder to build steel shrinks the
 army the steel was meant to protect. Push far enough and you lose the war
 holding the largest stockpile in Europe.
 
-**Tractors are not the goal.** They are how you get the steel *without* taking
-the grain — the way to pay in machines instead of people.
+**Tractors are not the goal.** They are how you raise the harvest *without*
+taking the grain — the way to pay in machines instead of people. There are two
+roads to them, and choosing between them is most of the early game:
+
+- **Build them.** Hard currency buys a German engineer, the engineer raises the
+  mill, the mill makes steel, 20 spare steel opens the works, and the works
+  makes 20 tractors a year forever. Four steps, and the first tractor is years
+  away.
+- **Buy them.** Ten in hard currency each, ready to drive, needing no engineer
+  and no mill and no works — and building none of those either. Every one is
+  bought again next time.
+
+The Fordsons came in by the thousand before Stalingrad opened.
 
 | strategy | starved | fallen | **total dead** | war |
 |---|---|---|---|---|
-| mechanise, arm late | 0 | 18 | **18** | won |
+| tractors, then armaments | 0 | 14 | **14** | won |
+| tractors only, never armed | 0 | 25 | **25** | won |
+| strip the villages, all armaments | 53 | 8 | **61** | won |
 | build nothing | 0 | 60 | **60** | lost |
-| strip the villages | 53 | 29 | **82** | lost |
+
+Three of those win. **The two orderings disagree**: ranked by soldiers dead the
+best plan is to strip the villages (8 fallen, because the survivors are
+lavishly armed); ranked by everyone dead it is the worst thing on the board.
+The game holds both numbers and does not say which is the real one.
 
 ## Play
 
 ```
 ./play                    # interactive: a spiel, then lettered options each year
 ```
+
+A plan keeps its letter for the whole game — unavailable ones stay in place,
+greyed, with the reason. So a sequence of letters really is a strategy.
+`B E B E J` wins on seed 1928 with nobody starved and five men lost.
 
 Or drive it by flags, which is scriptable and deterministic:
 
