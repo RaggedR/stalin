@@ -11,7 +11,8 @@ how a famine is administered.
 
 Built on the four combinators of §5 of Neil Ghani's *Containers for Typed
 Agentic AI* — `+`, `⊠`, `◁`, `×` as first-class values, vendored unmodified
-into [`lib/`](lib/). That reuse is itself the test of whether that library is
+into [`lib/`](lib/). [`combinators.pdf`](combinators.pdf) is a one-page flow
+chart of where each one fires. That reuse is itself the test of whether that library is
 a library or just some code that worked once.
 
 Requires [Deno](https://deno.com) 2.x. No install step, no lockfile, no

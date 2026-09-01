@@ -28,6 +28,6 @@ const r = await ask({ tag: "Reckoning" });
 const s = r.stocks as Record<string, unknown>, w = r.war as Record<string, unknown>;
 const mech = Number(r.finalOutput) >= Number(r.baselineOutput);
 console.log(`${seq}  out ${Number(r.finalOutput).toFixed(0).padStart(4)}/${Number(r.baselineOutput).toFixed(0)}` +
-  `  mill ${String(w.mill).padStart(3)}  tractors ${String(s.tractors).padStart(2)}  arms ${Number(s.warReserve).toFixed(0).padStart(3)}` +
+  `  tractors ${String(s.tractors).padStart(2)}  arms ${Number(s.warReserve).toFixed(0).padStart(3)}` +
   `  fallen ${String(w.fallen).padStart(2)}  starved ${String(r.starved).padStart(2)}` +
   `  TOTAL ${String(r.totalDead).padStart(3)}  ${w.won ? "won " : "LOST"}  ${mech ? "mechanised" : ""}`);

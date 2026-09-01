@@ -21,7 +21,7 @@ import {
   type Workforce, RULES, fightWar, gradeSteel, isNum, isProcurement, isRecord,
   isStr, living, rural,
 } from "./state.ts";
-import type { HarvestReport, RailReport, SmeltReport } from "./containers.ts";
+import type { HarvestReport, RailReport, SaleReport, SmeltReport } from "./containers.ts";
 import {
   type AgricultureC, type ArmamentsC, type ForeignTradeC,
   type SmelterC, type SteelTrade, type TractorWorksC,
@@ -80,7 +80,14 @@ const trade = leaf<ForeignTradeC>("trade", TD, {
 // ── The workflow algebra ──────────────────────────────────────────────
 const fieldsAndMill = tensorC(agri, smelter);
 const produce       = tensorC(fieldsAndMill, transport);      // (x) three sides
-const supply        = seqC(produce, transport);               // <| haul what was reaped
+// <|  What can be SOLD depends on what the railway actually managed to move,
+// which is not known until the haul has answered. Before the year was split
+// this was seqC(produce, transport) — haul what was reaped — but produce now
+// happens in spring and the haul in autumn, with a player decision between
+// them, so that composite can no longer be run in one call. The dependent pair
+// did not disappear, it moved one link down the chain: haul, then sell what
+// reached the port.
+const supply        = seqC(transport, trade);
 const build         = productC(tractorWorks, armaments,       //  x  one steel, one contract
   // The policy reads the decision off the shape: the side that was offered
   // the steel is the side that answers.
@@ -304,18 +311,36 @@ async function runAutumn(order: ReapOrder, depth: number): Promise<YearReport> {
     : exp.choice === "full" ? stateGrain * 0.6
     : stateGrain * 0.9;
 
-  const haul = await transport.run({
-    tag: "Haul", railCapacity: s.railCapacity, available: round(stateGrain),
-    needIndustry: indMouths, offerPort: round(offerPort), year,
-  }, depth);
-
-  let importedTractors = 0;
+  // The sequential composition, run. The composite shape is a first prompt
+  // TOGETHER WITH a function choosing the second from the first's reply: how
+  // much grain to offer the port is decided by how much the railway got there,
+  // and `next` is where that is applied. What the trade delegation is asked is
+  // therefore not knowable when the haul is dispatched.
+  let sold: SaleReport = { gold: 0, price: 0, sold: 0 };
+  let buyGrain = 0;
   const committed = RULES.steelCommitment;
   const st = resolveSteel(smelt.steel, committed, order.tradeSteel);
-  const buyGrain = st.choice === "buy" ? Math.min(haul.toPort, round(stateGrain * 0.15)) : 0;
 
+  const supplied = await supply.run(
+    supply.step(
+      { tag: "Haul" as const, railCapacity: s.railCapacity, available: round(stateGrain),
+        needIndustry: indMouths, offerPort: round(offerPort), year },
+      (moved) => {
+        // Buying steel abroad spends grain that reached the port, so it is
+        // capped by the haul and not by the harvest.
+        buyGrain = st.choice === "buy"
+          ? Math.min(moved.toPort, round(stateGrain * 0.15)) : 0;
+        return { tag: "SellGrain" as const,
+                 grain: round(Math.max(0, moved.toPort - buyGrain)), year };
+      },
+    ),
+    depth,
+  );
+  const haul = supplied.first;      // typed a HaulReport, uncast
+  sold = supplied.second;           // typed a SaleReport, uncast
+
+  let importedTractors = 0;
   let gold = 0, grainExported = 0, steelImported = 0;
-  const grainToSell = round(Math.max(0, haul.toPort - buyGrain));
 
   if (buyGrain > 0) {
     const bought = await trade.run({ tag: "BuySteel", grain: buyGrain, year }, depth);
@@ -328,14 +353,10 @@ async function runAutumn(order: ReapOrder, depth: number): Promise<YearReport> {
   // (grain OR steel) and a tensor when it was wide (both). Selling steel is
   // gone — a plan that exports its steel is not industrialising — and with it
   // those two demonstrations, rather than leave them running on a quantity
-  // that is now always zero. Both combinators are still exercised: the tensor
-  // by the three sectors working the same year, the product by tractors
-  // against armaments.
-  if (grainToSell > 0) {
-    const sale = await trade.run({ tag: "SellGrain", grain: grainToSell, year }, depth);
-    gold = sale.gold;
-    grainExported += sale.sold;
-  }
+  // that is now always zero.
+  gold += sold.gold;
+  grainExported += sold.sold;
+
   s.gold = round(s.gold + gold);
 
   if (order.buy === "tractors" && s.gold > 0) {
