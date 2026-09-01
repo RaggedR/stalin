@@ -91,6 +91,14 @@
 \begin{document}
 \maketitle
 
+\begin{center}
+\begin{minipage}{0.88\linewidth}\small\itshape
+I am not an expert at Unix, or at web app development, or at container combinators, so these
+notes are just as much for myself as for anybody else.
+\end{minipage}
+\end{center}
+\vspace{1mm}
+
 \section{The Unix philosophy, pipes, and CLI tools}
 
 In case the reader is a little rusty, we begin with a brief review of the Unix this note
@@ -501,9 +509,9 @@ nothing else happens. Here is one complete exchange, the request and the respons
 \mbox{}\\
 \mbox{< HTTP/1.1 200 OK}\\
 \hspace*{1em}\colorbox{hdrbg}{\mbox{Content-Type: application/json}}\\
-\hspace*{1em}\colorbox{hdrbg}{\mbox{Content-Length: 61}}\\
+\hspace*{1em}\colorbox{hdrbg}{\mbox{Content-Length: 53}}\\
 \mbox{}\\
-\hspace*{1em}\colorbox{bdybg}{\mbox{\{"id": 1, "title": "Diaspora", "year": 1997, "inPrint": true\}}}
+\hspace*{1em}\colorbox{bdybg}{\mbox{\{"id": 1, "title": "Diaspora", "author": "Greg Egan"\}}}
 \vspace{1mm}
 \end{minipage}}
 \end{center}
@@ -529,13 +537,12 @@ Statelessness in particular looked like a straightforward defect. A protocol tha
 remember the previous request cannot have sessions, cannot have transactions, cannot notify you
 when something happens, and cannot check that what you sent was even the right kind of thing.
 
-What the weakness bought is exactly what it looks like it costs. Because a request carries
-everything needed to answer it, \emph{any} server can answer \emph{any} request: put a hundred
-machines behind one name and requests may be sprayed across them in any order. Because a
-response depends only on its request, anything in between may keep a copy and answer the next
-one itself. And because the server holds nothing on your behalf, a server that dies loses one
-request rather than your session. Load balancing and caching were not added to HTTP later ---
-they are consequences of the thing that looked like the flaw.
+Statelessness is what lets the web scale. Because a request carries everything needed to answer
+it, any server can answer any request, so a hundred machines can sit behind one name. Because a
+response depends only on its request, anything in between can cache it. And because the server
+holds nothing on your behalf, a crash costs one request rather than your session. Load balancing
+and caching were not added to HTTP later; they are consequences of the thing that looked like
+the flaw.
 
 The best evidence is what has happened since. The encoding on the wire has been replaced twice
 --- a binary framing in 2015, and a different transport underneath it in 2022 --- and both
@@ -543,15 +550,17 @@ times the semantics were left exactly as they were: a method, a path, some heade
 a three-digit status. Two complete rewrites of how the bytes travel, and nothing above had to
 be rethought.
 
-The parallel with the first section is close enough to be worth naming. A pipe carries bytes
-and does not know what they mean; an HTTP response carries bytes and a string saying what they
-are. In both cases the interface is universal precisely because it is weak, in both cases
-nothing verifies that an exchange means anything, and in both cases what was rebuilt on top of
-the weakness had to be rebuilt without any help from the protocol at all.
+The parallel with the first section is close enough to be worth naming. A pipe carries bytes and
+does not know what they mean; an HTTP response carries bytes and a string claiming what they
+are. Both interfaces are universal precisely because they are weak, and in both cases whatever
+the interface does not supply has to be built above it by agreement between the two ends ---
+\emph{structure}, for the pipe, since nothing checks that two joined programs mean the same
+thing by their bytes, and \emph{memory}, for HTTP, since every mechanism that makes a site
+remember you sits on top of the protocol rather than in it.
 
 \subsection*{The method says what kind of thing you are doing}
 
-The method is the verb. There are a handful in common use and only the first two appear below.
+The method is the verb. There are several, and two of them are all this note needs.
 
 \begin{center}
 \begin{tabular}{ll}
@@ -560,22 +569,21 @@ The method is the verb. There are a handful in common use and only the first two
 \midrule
 \texttt{GET}    & read something; change nothing \\
 \texttt{POST}   & create something \\
-\texttt{PUT}    & replace something entirely \\
-\texttt{PATCH}  & change part of something \\
-\texttt{DELETE} & remove something \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-The distinction that matters is the first one. A \texttt{GET} is meant to have no effect, which
-is why anything in the network is free to cache it or repeat it. Asking the toy server for a
+The distinction between them is the one that matters. A \texttt{GET} is meant to have no effect,
+which is why anything in the network is free to cache it or repeat it; a \texttt{POST} changes
+something, so nothing may do either. Asking the toy server for a
 book and asking it to add one differ in the verb, and the two answers differ accordingly:
 
 \begin{lstlisting}[language=SH]
-$ curl -X GET  http://127.0.0.1:8099/books/1     -- 200 OK
+$ curl -X GET  http://127.0.0.1:8099/books/1                    -- 200 OK
 $ curl -X POST http://127.0.0.1:8099/books \
        -H 'Content-Type: application/json' \
-       -d '{"title":"Permutation City","year":1994}'  -- 201 Created
+       -d '{"title":"Permutation City","author":"Greg Egan"}'
+{"id": 2, "title": "Permutation City", "author": "Greg Egan"}   -- 201 Created
 \end{lstlisting}
 
 \subsection*{The status code says what happened}
@@ -598,26 +606,7 @@ class, and the class is the part worth knowing.
 
 The \texttt{4xx}/\texttt{5xx} split is the whole value of the vocabulary. It lets a caller tell
 ``I asked for something impossible'' from ``the far end is broken'', and those call for
-completely different responses: fix the request, or try again later. Four requests to the toy
-server, and four different answers:
-
-\begin{lstlisting}[language=SH]
-200  asked for a book that exists
-404  asked for a book that does not
-400  sent a body that is not JSON
-400  sent JSON with no title
-\end{lstlisting}
-
-Note that the last two are both \texttt{400}. \texttt{404} and \texttt{400} are both the
-client's fault, and the code alone does not say which detail was wrong --- so a useful server
-puts that in the body:
-
-\begin{lstlisting}[language=SH]
-$ curl -X POST -d 'not json'      http://127.0.0.1:8099/books
-{"error": "body is not JSON"}
-$ curl -X POST -d '{"year":1997}' http://127.0.0.1:8099/books
-{"error": "title is required"}
-\end{lstlisting}
+completely different responses: fix the request, or try again later.
 
 \subsection*{Headers describe the message}
 
@@ -644,7 +633,7 @@ interchangeable.
 \textbf{Place} & \textbf{Example} \\
 \midrule
 the path         & \texttt{/books/1} --- which thing \\
-the query string & \texttt{/books?year=1997} --- how to filter or sort it \\
+the query string & \texttt{/books?author=Egan} --- how to filter or sort it \\
 a header         & \texttt{Content-Type: application/json} --- about the message \\
 the body         & the JSON document itself \\
 \bottomrule
@@ -675,13 +664,13 @@ JSON --- JavaScript Object Notation --- is a text format for data. It has six ty
 others: objects, arrays, strings, numbers, booleans, and \texttt{null}.
 
 \begin{lstlisting}[language=TS]
-{
-  "title":   "Diaspora",         // a string
-  "year":    1997,               // a number
-  "inPrint": true,               // a boolean
-  "tags":    ["sf"],             // an array
-  "author":  { "name": "Egan" }, // an object
-  "sequel":  null                // null
+{                             // the whole record is an object
+  "id":      1,               // a number
+  "title":   "Diaspora",      // a string
+  "author":  "Greg Egan",     // another string
+  "inPrint": true,            // a boolean
+  "tags":    ["sf"],          // an array
+  "sequel":  null             // null
 }
 \end{lstlisting}
 
@@ -698,14 +687,14 @@ explicitly set to \texttt{undefined}, and they are simply not there afterwards. 
 raised:
 
 \begin{lstlisting}[language=TS]
-const o = { title: "Diaspora", year: 1997, tags: ["sf"],
+const o = { id: 1, title: "Diaspora", author: "Greg Egan",
             reissue: undefined, describe: () => "a book" };
 JSON.stringify(o)
-// {"title":"Diaspora","year":1997,"tags":["sf"]}
+// {"id":1,"title":"Diaspora","author":"Greg Egan"}
 \end{lstlisting}
 
-\textbf{One number type.} Every number is an IEEE 754 double. That is fine for a year and not
-fine for money or for identifiers:
+\textbf{One number type.} Every number is an IEEE 754 double. That is fine for a small id and
+not fine for money or for a large one:
 
 \begin{lstlisting}[language=TS]
 JSON.stringify({ n: 0.1 + 0.2 })          // {"n":0.30000000000000004}
@@ -748,15 +737,15 @@ TypeScript is a type system over JavaScript. The types are annotations: you writ
 checker reads them, and then they are removed and ordinary JavaScript runs.
 
 \begin{lstlisting}[language=TS]
-interface Book { title: string; year: number }
-const b: Book = { title: "Diaspora", year: "1997" };
+interface Book { id: number; title: string; author: string }
+const b: Book = { id: "1", title: "Diaspora", author: "Greg Egan" };
 \end{lstlisting}
 
 \begin{lstlisting}[language=SH]
 $ deno check t1.ts
 TS2322 [ERROR]: Type 'string' is not assignable to type 'number'.
-const b: Book = { title: "Diaspora", year: "1997" };
-                                     ~~~~
+const b: Book = { id: "1", title: "Diaspora", author: "Greg Egan" };
+                  ~~
 \end{lstlisting}
 
 Nothing ran. The mistake was found by reading the program, which is the whole point of having
@@ -769,18 +758,18 @@ check derived from them. So the \texttt{as} operator is not a conversion --- it 
 that the checker accepts without verifying and the runtime cannot verify at all:
 
 \begin{lstlisting}[language=TS]
-const raw = '{"title":"Diaspora","year":"1997"}';
+const raw = '{"id":"1","title":"Diaspora","author":"Greg Egan"}';
 const b = JSON.parse(raw) as Book;   // a promise, not a check
-console.log(b.year.toFixed(0));      // compiles: year is declared number
+console.log(b.id.toFixed(0));        // compiles: id is declared number
 \end{lstlisting}
 
 \begin{lstlisting}[language=SH]
 $ deno check t2.ts      -- passes. Nothing is wrong as far as the checker knows.
 $ deno run   t2.ts
-TypeError: b.year.toFixed is not a function
+TypeError: b.id.toFixed is not a function
 \end{lstlisting}
 
-The checker was told \texttt{year} is a number and believed it. The year was a string all along,
+The checker was told \texttt{id} is a number and believed it. The id was a string all along,
 and the error surfaced at the first place that actually used it --- which may be a long way from
 the cast, and in a real program is likely to be somewhere else entirely.
 
@@ -791,8 +780,8 @@ every operation on an \texttt{any} is permitted. \texttt{unknown} does the oppos
 permits nothing until you have established what you have.
 
 \begin{lstlisting}[language=TS]
-const raw: unknown = JSON.parse('{"title":"Diaspora","year":"1997"}');
-console.log(raw.year);
+const raw: unknown = JSON.parse('{"id":"1","title":"Diaspora","author":"Greg Egan"}');
+console.log(raw.id);
 \end{lstlisting}
 
 \begin{lstlisting}[language=SH]
@@ -812,24 +801,25 @@ the fields. The signature to aim for is \texttt{unknown} in, and the type \emph{
 function asBook(u: unknown): Book | null {
   if (typeof u !== "object" || u === null) return null;
   const o = u as Record<string, unknown>;
-  if (typeof o.title !== "string") return null;
-  if (typeof o.year  !== "number") return null;
-  return { title: o.title, year: o.year };      // rebuilt, not asserted
+  if (typeof o.id     !== "number") return null;
+  if (typeof o.title  !== "string") return null;
+  if (typeof o.author !== "string") return null;
+  return { id: o.id, title: o.title, author: o.author };  // rebuilt, not asserted
 }
 \end{lstlisting}
 
 \begin{lstlisting}[language=SH]
 $ deno run t6.ts
-accepted: Diaspora 1997
-refused: {"title":"Diaspora","year":"1997"}
-refused: {"year":1997}
+accepted: Diaspora (1)
+refused: {"id":"1","title":"Diaspora","author":"Greg Egan"}
+refused: {"id":1,"author":"Greg Egan"}
 \end{lstlisting}
 
 Four things are deliberate. The parameter is \texttt{unknown}, so nothing can be done to it by
 accident. \textbf{Refusal is a value} --- \texttt{null}, not an exception --- so the caller has
 to decide what to do about it. The returned object is \textbf{constructed}, field by field,
 rather than asserted, so it is a \texttt{Book} because it was built as one. And the checks are
-what make the type true: after this function, a \texttt{Book} really does have a numeric year,
+what make the type true: after this function, a \texttt{Book} really does have a numeric id,
 and everything downstream may rely on it.
 
 \subsection*{A tagged union writes down a finite choice}
@@ -841,7 +831,7 @@ field that says which it is:
 type Query =
   | { kind: "count" }
   | { kind: "find";  title: string }
-  | { kind: "since"; year: number };
+  | { kind: "byAuthor"; author: string };
 \end{lstlisting}
 
 The value of writing it this way is that the checker can tell the cases apart. Inside
@@ -856,11 +846,11 @@ function from the request to the \emph{type} of the response, and over a finite 
 can simply be written down:
 
 \begin{lstlisting}[language=TS]
-interface Answers { count: number; find: Book | null; since: Book[] }
+interface Answers { count: number; find: Book | null; byAuthor: Book[] }
 type Reply<K extends Query["kind"]> = Answers[K];
 \end{lstlisting}
 
-\texttt{Reply<"count">} is \texttt{number}, \texttt{Reply<"since">} is \texttt{Book[]}. Read
+\texttt{Reply<"count">} is \texttt{number}, \texttt{Reply<"byAuthor">} is \texttt{Book[]}. Read
 \texttt{Answers} as the table of a function from the tag to a type.
 
 \subsection*{The handler table, total by construction}
@@ -872,9 +862,9 @@ a finite tag set it can be written as a record, one entry per case:
 type Handlers = { [K in Query["kind"]]: (q: Extract<Query, { kind: K }>) => Reply<K> };
 
 const handlers: Handlers = {
-  count: (_q) => SHELF.length,
-  find:  (q)  => SHELF.find(b => b.title === q.title) ?? null,
-  since: (q)  => SHELF.filter(b => b.year >= q.year),
+  count:    (_q) => SHELF.length,
+  find:     (q)  => SHELF.find(b => b.title === q.title) ?? null,
+  byAuthor: (q)  => SHELF.filter(b => b.author === q.author),
 };
 \end{lstlisting}
 
@@ -886,7 +876,7 @@ query and the object stops satisfying \texttt{Handlers}:
 
 \begin{lstlisting}[language=SH]
 TS2741 [ERROR]: Property 'oldest' is missing in type
-       '{ count: ...; find: ...; since: ...; }' but required in type 'Handlers'.
+       '{ count: ...; find: ...; byAuthor: ...; }' but required in type 'Handlers'.
 \end{lstlisting}
 
 There is no default branch to fall through and no dispatch to forget. A whole class of mistake
@@ -910,7 +900,7 @@ $ curl -i http://127.0.0.1:8098/
 HTTP/1.1 200 OK
 content-type: application/json
 
-[{"title":"Diaspora","year":1997}]
+[{"id":1,"title":"Diaspora","author":"Greg Egan"}]
 
 $ curl -X POST http://127.0.0.1:8098/     -- 405
 \end{lstlisting}
