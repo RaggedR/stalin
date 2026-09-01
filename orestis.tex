@@ -912,7 +912,7 @@ the checker is reasoning about a claim rather than a fact.
 Which is why the whole of it rests on the smallest piece: a function with the signature
 \texttt{unknown → T | null}, that looks at the fields, and refuses.
 
-\section*{Summary}
+\section*{Summary of the concepts}
 
 One shape recurs at every level of this stack: \textbf{a prompt determines the type of its
 response}. What changes from level to level is only who enforces it.
@@ -957,4 +957,426 @@ the handovers, and there are three of them in this note.
       reasoning carefully about something that was never true.
 \end{itemize}
 
+\section{The game}
+
+\texttt{stalin} is a resource-allocation game about the First Five-Year Plan. You are given the
+Soviet Union in 1928 and five years to industrialise it, and you must also win the war in 1941.
+
+Both are paid for in the same currency, and the chain is the whole game:
+
+\begin{lstlisting}
+  grain --sell--> gold --hire--> engineers --> STEEL --+--> tractors --> more grain
+    ^                                                 |
+    |                                                 +--> railway --> throughput
+  peasants eat it -- and every one who starves        |
+  is also a soldier absent from the line in 1941      +--> armaments --> fewer soldiers die
+\end{lstlisting}
+
+A year is two turns, and the split is the point. In \emph{spring} you fix where the hands go and
+how hard the villages are squeezed --- \emph{before} you know the weather. In \emph{autumn} the
+harvest comes in graded, and you dispose of it knowing exactly what it was. A quota set in March
+against a harvest that fails in August is not a game mechanic; it is how a famine is
+administered. Five years is ten decisions, and then a reckoning.
+
+\subsection*{Why the two costs are not independent}
+
+Combat power in 1941 is
+\[
+  m \cdot \mathrm{manPower} \;+\; \mathrm{steelPower} \cdot \sqrt{W \cdot m}
+\]
+for $m$ men and $W$ tonnes of war reserve. A man is worth something holding nothing; a shell is
+worth nothing with nobody to fire it; and because the second term grows as a square root, the
+more steel each man already carries the less the next tonne adds. Men and steel are therefore
+complements, and partly substitutes: the same victory can be bought with more of one or more of
+the other, and the price of the second is paid in lives.
+
+The trap is that extraction feeds both sides of that expression with opposite signs. A peasant
+starved in 1932 is a soldier missing in 1941, so squeezing harder to build steel shrinks the
+army the steel was meant to protect. Push far enough and you lose the war holding the largest
+stockpile in Europe.
+
+\subsection*{Tractors are not the goal}
+
+Tractors are how you raise the harvest \emph{without} taking the grain --- the way to pay in
+machines instead of people. There are two roads to them, and choosing between them is most of
+the early game.
+
+\textbf{Build them.} Hard currency buys a German engineer, the engineer raises the mill, the mill
+makes steel, twenty spare tonnes of steel opens the works, and the works makes twenty tractors a
+year forever. Four steps, and the first tractor is years away.
+
+\textbf{Buy them.} Ten in hard currency each, ready to drive, needing no engineer and no mill and
+no works --- and building none of those either. Every one is bought again next time.
+
+\subsection*{Seven plans}
+
+A plan keeps its letter for the whole game, so a sequence of ten letters is a strategy and the
+space can be searched directly. All seven below were run at seed 1928, and the numbers are what
+came out of the terminal.
+
+\begin{center}\small
+\begin{tabular}{@{}llrrrrrl@{}}
+\toprule
+strategy & letters & tractors & armaments & starved & fallen & \textbf{dead} & outcome \\
+\midrule
+gentle armament   & \texttt{AJBEBJAJAJ} &  2 & 89 &  5 &  4 & \textbf{9}  & won \\
+brutalist mech.   & \texttt{CMKEBIBJNJ} & 22 & 80 & 14 &  5 & \textbf{19} & won, mechanised \\
+no railway        & \texttt{KABEBIBJAJ} & 22 & 82 & 25 &  4 & \textbf{29} & won, mechanised \\
+partial armament  & \texttt{CABEBINJAA} & 42 & 34 & 21 & 14 & \textbf{35} & won, mechanised \\
+totally brutal    & \texttt{KJBEAJBJAJ} &  2 & 78 & 44 &  5 & \textbf{49} & won \\
+bought tractors   & \texttt{AMAMAFAMAF} & 18 &  0 &  3 & 57 & \textbf{60} & \emph{lost} \\
+never armed       & \texttt{CAKEBINIAI} & 62 &  0 & 15 & 52 & \textbf{67} & \emph{lost} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Five of the seven win, and the table says several things at once.
+
+\textbf{Never arming loses.} A beautifully mechanised country --- sixty-two tractors and the
+largest harvest on the board --- falls in 1941, because men with nothing to fire cannot reach the
+enemy's strength.
+
+\textbf{Buying the tractors abroad is the humane road, and it is fatal.} Three starve, the fewest
+of any line. But imported tractors build no mill, no engineers and no steel, so there is nothing
+to arm with, and fifty-seven soldiers pay for the three peasants.
+
+\textbf{Partial armament wins and bleeds.} Thirty-four tonnes is enough to win and not enough to
+win cheaply: fourteen fallen against the best line's four. The war curve is smooth, so half an
+army is a victory paid for in men.
+
+\textbf{The railway comes before the steel.} Grain the railway cannot move rots at the sidings. A
+hard quota with no track to carry it starves twenty-five people for nothing --- worse than the
+same brutality with a railway, for the same industrial result.
+
+\textbf{The two rankings disagree.} By soldiers lost, \emph{no railway} and \emph{gentle
+armament} tie at four; by everyone lost, gentle armament wins outright at nine while no railway
+comes third at twenty-nine. The game keeps both numbers and does not say which is the real one.
+
+\subsection*{The plan the game was built around, and the one that beats it}
+
+The design intent was that \emph{brutalist mechanisation} should be optimal: starve the villages
+early, spend it on rail, engineers and tractors, then turn the surplus into an army. It is
+morally uncomfortable and it was supposed to win.
+
+It does not. \texttt{AJBEBJAJAJ} --- found by machine search over the menu rather than by hand
+--- wins for nine dead by doing almost nothing: put hands in the mill, buy the Germans once, then
+smelt straight into armaments for four years. No railway, no tractors on purpose, and no famine
+beyond the baseline five who die whatever you do.
+
+\textbf{But look at what it does not end up holding.} A plan counts as mechanised if its final
+harvest beats 1928's, and gentle armament finishes at 258 against a baseline of 277: it feeds
+fewer people in 1932 than the country fed before the plan began. It wins the war and it does not
+build the country. Brutalist mechanisation ends at 285, with twenty-two tractors and an economy
+that would go on producing, and it pays five more lives for that. So the cheapest plan in lives
+is also the one that leaves nothing behind, and the game does not resolve that either.
+
+The reason gentle armament wins at all is a dependency length rather than a number. Its chain is
+mill $\to$ steel $\to$ armaments: three links, so the first armaments are built in 1929. The
+mechanised chain is rail $\to$ export $\to$ engineers $\to$ works $\to$ tractors $\to$ freed
+hands $\to$ mill $\to$ steel $\to$ armaments: nine links, each costing at least a turn, against
+ten turns in the whole plan. The mechanised economy matures in 1932, and then the plan ends. This
+is recorded as a failing test in \texttt{calibrate.ts} rather than quietly redefined.
+
+\subsection*{A note on the subject}
+
+This was a tragic episode of history and I don't intend to make light of the suffering of those
+involved. It is for illustrative purposes only.
+
+\section{Containers and composition}
+
+Everything from here on is one idea from Neil Ghani's \emph{Containers for Typed Agentic AI},
+and the reader has met it already without its name.
+
+\subsection*{A container is a pair}
+
+A \emph{container} is a pair
+\[
+  P : \mathrm{Type} \qquad\qquad R : P \to \mathrm{Type}
+\]
+of \emph{prompts} $P$ and, for each prompt, the type $R\,p$ of replies appropriate to it. An
+inhabitant of the interface is a dependent function
+\[
+  (p : P) \to R\,p .
+\]
+
+That is the shape of the fourth section of this note, arriving with a name. The \texttt{Query}
+union was $P$. \texttt{Answers} was $R$. The handler table was $(p : P) \to R\,p$, written as a
+record because the index was finite. Ghani's observation is that event-driven programming ``has a
+feature that turns out to be exactly a dependent type'': which responses are appropriate depends
+on which event arrived. Nothing about loops or callbacks appears in that sentence, which is why a
+command-line tool is an instance of it too.
+
+And a game is a container. $P$ is the situations you can be in, $R\,s$ is the moves legal at $s$,
+and a player is $(s : P) \to R\,s$. That is not an analogy; it is the same type.
+
+\subsection*{A morphism is how one container calls another}
+
+A morphism $(P,R) \to (Q,T)$ is a pair of functions:
+\[
+  u : P \to Q
+  \qquad\qquad
+  f : (p : P) \to T\,(u\,p) \to R\,p
+\]
+$u$ \emph{delegates} --- it turns my prompt into one for the level below. $f$
+\emph{amalgamates} --- it turns their reply into mine. Control flows \emph{down} through $u$, and
+data flows \emph{up} through $f$.
+
+That shape is worth dwelling on, because it is the shape of a command economy, which is why the
+fit with the subject is good rather than decorative. The Plan does not do the harvesting. It
+converts ``feed the towns'' into ``agriculture: reap'', and converts the reply back into a number
+for its own ledger.
+
+\subsection*{Four ways to compose}
+
+Containers compose, and four ways matter. Each is defined by what it does to the shapes and,
+separately, by what it does to the positions --- and the second column is where the interesting
+differences live.
+
+\begin{center}\small
+\begin{tabular}{@{}cll@{}}
+\toprule
+& \textbf{shapes} & \textbf{positions} \\
+\midrule
+$+$ \ sum            & disjoint union: one side or the other & each keeps its own \\
+$\boxtimes$ \ tensor & multiply: a prompt for each side & multiply: a reply from \emph{each} \\
+$\lhd$ \ sequential  & a first prompt, and a function choosing the second & a pair of replies \\
+$\times$ \ product   & multiply: prompt both & \emph{sum}: exactly \emph{one} answers \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The distinction that does the most work is $\boxtimes$ against $\times$. Both prompt everybody,
+and their shapes are identical. The tensor requires all of them to answer; the product requires
+exactly one. Same question, different obligation --- and in a resource allocation problem that is
+exactly the difference between doing several things at once and choosing between them.
+
+$\lhd$ is the subtle one. Its shape is not a pair of prompts but a first prompt \emph{together
+with a function} computing the second from the first's reply. So the second question is not
+knowable when the first is asked, which is what makes it sequential rather than parallel --- and,
+as the next section shows, what makes it the one combinator that cannot be sent over a wire.
+
+\section{How the game is implemented}
+
+\subsection*{Five servers, and why they are servers}
+
+The game runs as five programs, each listening on a port. The player talks only to the Plan; the
+Plan delegates to the four commissariats beneath it.
+
+\begin{lstlisting}
+  you --$ stalin sow|reap ... -->  [ 8801 gosplan ]                the Plan
+                          +---------------+---------------+
+                [8802 agriculture]  [8803 industry]  [8804 transport]
+                                          |
+                                 [8805 foreign trade]
+\end{lstlisting}
+
+They could have been five modules with a function call at every hop. The comment at the top of
+\texttt{wire.ts} says why they are not:
+
+\begin{quote}
+A hop costs a process, which is the whole point: control genuinely flows down, and the boundary
+is real rather than a function call wearing a costume.
+\end{quote}
+
+The delegate leg $u$ maps \emph{shapes}, and shapes are exactly what survives a wire. If a hop
+were a function call, nothing would stop a handler reaching into its caller's state, and the
+claim that the levels are separate would be untestable. Making it a socket makes the claim
+falsifiable: whatever crosses must be expressible in JSON, and the compiler on the far side has
+never heard of your types. The cost is written down too --- about a fifth of a second per hop,
+which a hundred-game search pays forty times per game, hence an environment variable that keeps
+the HTTP hop and skips only the process spawn. No game a player sees uses it.
+
+\subsection*{The game as a composite}
+
+Each turn is one of the four compositions, and which one it is makes a claim about the year
+rather than being a detail of the code.
+
+\begin{center}\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+& \textbf{composite} & \textbf{why that one} \\
+\midrule
+spring & (agri $\boxtimes$ mill) $\boxtimes$ rail & all three work at once and \emph{all three
+owe a report}; there is no partial year \\
+autumn & transport $\lhd$ trade & what may be sold is computed \emph{from} what the railway
+actually moved \\
+build  & tractors $\times$ armaments & the same steel, one decision: offer both, answer one \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The product is the one to look at twice. Tractors and armaments are both offered every autumn and
+exactly one is built, because there is one stock of steel. Had the game let you split the steel
+between them it would have been a tensor, and the central dilemma of the previous section would
+have dissolved into a slider. The choice of combinator \emph{is} the game mechanic.
+
+The sum, honestly, is never built as a composite: there is no \texttt{sumC} call in the game. It
+appears instead as each container's own shape type, a tagged union, whose eliminator is the
+\texttt{switch} in every server. That is a coproduct doing real work, but calling it a use of the
+combinator would be an overstatement.
+
+\subsection*{What crosses, and what the status code says}
+
+Every hop is a \texttt{POST} to a port with a JSON body, and the reply is JSON. The path is
+unused: the port identifies the container. The three outcomes are genuinely different kinds of
+thing, and the status vocabulary already distinguishes them.
+
+\begin{lstlisting}[language=TS]
+try { body = await req.json(); }
+catch { return json({ error: "not JSON" }, 400); }
+
+const prompt = opts.parse(body);
+if (prompt === null) {
+  // The validator refused.  No cast was made, so nothing ill-typed is
+  // downstream of this line -- that is the whole point of validating.
+  return json({ error: "not a valid prompt for this container", got: body }, 400);
+}
+try   { return json(await opts.answer(prompt, depth + 1), 200); }
+catch (e) { return json({ error: msg }, 500); }
+\end{lstlisting}
+
+Against the transport commissariat, with the servers running:
+
+\begin{lstlisting}[language=SH]
+$ curl -s -X POST localhost:8804 \
+    -d '{"tag":"Haul","railCapacity":40,"available":100,
+         "needIndustry":30,"offerPort":50,"year":1929}'
+{"toIndustry":30,"toPort":10,"stranded":40,"short":0}          -- 200
+
+$ curl -s -X POST localhost:8804 -d '{"tag":"Haul","railCapacity":"lots"}'
+{"error":"not a valid prompt for this container", ...}         -- 400
+$ curl -s -X POST localhost:8804 -d 'not json at all'
+{"error":"not JSON"}                                           -- 400
+$ curl -s -X POST localhost:8804 -d '{"tag":"Purge"}'          -- 400
+\end{lstlisting}
+
+Read the first reply, because it is the game in four numbers. Forty units of rail capacity, a
+hundred units of grain in hand, thirty needed at the mill and fifty offered to the port: the mill
+is fed first, which leaves ten units of capacity, so ten reach the port and \textbf{forty tonnes
+are stranded} --- grain the state owns, has procured, and cannot move. That is why a railway is
+throughput rather than capital, and it is the whole content of the \emph{no railway} line in the
+table two sections back.
+
+The three 400s are all ``that was not a prompt'', at three depths: not JSON at all; JSON but not
+this container's shape; a tag this container does not have. Only a 500 means ``that was a prompt,
+and answering it went wrong''. Getting that split right is what lets a caller tell a bug in
+itself from a bug in its callee.
+
+One thing rides outside the body. A depth counter travels in a header,
+\texttt{x-tower-depth}, and the reason given in the source is worth adopting generally:
+\emph{the depth rides in a header rather than in the prompt, because the prompt is the
+container's shape, and nothing that isn't a prompt belongs in it.}
+
+\subsection*{A hop is a CLI tool}
+
+The program that carries a prompt to the next level is forty lines long and knows nothing about
+the game:
+
+\begin{lstlisting}[language=SH]
+$ deno run --quiet --allow-net --allow-env \
+    lib/delegate.ts 8804 '{"tag":"Census"}' 0
+{"workforce":{"fields":0,"drivers":0,"mill":0,"rail":0,"dead":0},
+ "stocks":{"railCapacity":0},"trueOutput":0}
+\end{lstlisting}
+
+It is the delegate leg $u$ made executable, and it observes every discipline from the first
+section. Its exit codes distinguish the two kinds of failure: \texttt{2} for a malformed prompt or
+missing arguments, \texttt{1} for a port with nothing behind it. Every diagnostic goes to
+descriptor~2, and descriptor~1 carries the reply and nothing else --- which is exactly what lets
+the caller parse the whole of stdout as one JSON document.
+
+That discipline is also what makes the tracing possible. The servers narrate themselves on
+descriptor~2 while descriptor~1 stays machine-readable:
+
+\begin{lstlisting}[style=trace]
+ ↓ gosplan   Sow order={"procurement":"firm","labour":{"…
+   ↓ gosplan   ((agri (x) smelter) (x) transport)
+     ↓ agri      Harvest workforce={"fields":100,...} tractors=0 year=1928
+     ↑ agri      {grain, grade, perWorker, withoutTractors}
+     ↓ industry  Smelt workers=12 millCapacity=8 year=1928
+     ↑ industry  {steel, idleCapacity}
+ ↑ gosplan   {kind, year, harvest, steel, …}
+\end{lstlisting}
+
+Indentation is the depth counter, \texttt{↓} is control flowing down and \texttt{↑} is data
+flowing back up. That is a derivation tree of container morphisms, printed by a program that had
+no idea it was doing that.
+
+\subsection*{Where the compiler carries a rule of the game}
+
+Two rules are enforced by the type checker rather than validated at run time, and both work by
+the trick from the fourth section: a conditional type over a finite union.
+
+\begin{lstlisting}[language=TS]
+export type ExportChoice<G extends HarvestGrade> =
+  G extends "failure"  ? "none"
+: G extends "poor"     ? "none" | "surplus"
+: G extends "adequate" ? "none" | "surplus" | "full"
+:                        "none" | "surplus" | "full" | "maximum";
+
+exportPlan("bumper",  "maximum")   // fine
+exportPlan("failure", "maximum")   // does not compile
+\end{lstlisting}
+
+Exporting grain during a failed harvest is not a move the engine rejects. It is a move that
+cannot be written down. The same trick carries the arc of the whole game: you may buy steel while
+in deficit, and never sell it, because a country that exports its steel is not industrialising.
+
+\begin{lstlisting}[language=TS]
+export type SteelTrade<P extends SteelPosition> =
+  P extends "deficit" ? "none" | "buy" : "none";
+\end{lstlisting}
+
+Both work only because the index set is finite. A rule over tonnages could not be typed this way;
+the same rule over \emph{grades} can. That is also how the apparatus actually worked: quotas were
+set against reported categories, never against measured tonnes.
+
+\subsection*{The one thing that cannot cross}
+
+Of everything JSON leaves out, one omission bites structurally rather than merely requiring care.
+A function cannot be serialised --- and the shape of $\lhd$ is a first prompt together with a
+function computing the second.
+
+So sequential composition cannot be distributed over the wire. It is resolved \emph{above} it, in
+the runner, which prompts the first container and applies that function to the reply to obtain the
+second prompt; only the two ground prompts ever cross. The wire format is not neutral about which
+combinators can be sent and which must be interpreted locally, and this is the sharpest example in
+the repository of a mathematical structure meeting a transport and losing an argument.
+
+\subsection*{What the reports are worth}
+
+Each commissariat holds two things the Plan cannot see: how well it is actually doing, and how
+much it inflates its dispatches. The Plan keeps the true ledger for grain, because the grain
+physically exists. What diverges is the \emph{report}, and you plan against the report.
+
+\begin{lstlisting}
+Narkomtiazhprom: quota fulfilled, with difficulties overcome.
+\end{lstlisting}
+
+This is the honest limit of everything above. The type of a dispatch guarantees its shape and says
+exactly nothing about its truth. A validator can establish that a reply is a well-formed
+dispatch; no validator can establish that the number in it is the number that happened. The
+reckoning prints both columns and leaves the reader to notice.
+
+\subsection*{And where the protocol is not doing the work}
+
+One last piece of honesty. HTTP is stateless and these servers are not: each keeps its books at
+module scope, in the process. That is defensible --- a commissariat \emph{is} a stateful thing,
+and the exercise is about the container algebra rather than about session management --- but it
+has a consequence, and the consequence is visible in the interface. The protocol cannot clear that
+state, so clearing it has to become a prompt:
+
+\begin{lstlisting}[language=TS]
+Reset: (p) => { seed = p.seed; books = new Books(...); laid = 0; lastQuota = 0;
+                return { ok: true }; },
+\end{lstlisting}
+
+\texttt{Reset} has no meaning in the fiction; no plan resets a railway. It exists because starting
+a new game must reach the commissariats, or the weather and the books carry over into the next one
+--- a bug the comment records as having actually happened. Determinism on the seed is what makes a
+playthrough a regression test, so this is load-bearing rather than tidying. And the general lesson
+is the one worth taking away: when process state substitutes for protocol state, the lifecycle
+leaks into the interface.
+
 \end{document}
+
