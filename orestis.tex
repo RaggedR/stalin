@@ -1253,13 +1253,40 @@ as the next section shows, what makes it the one combinator that cannot be sent 
 The game runs as five programs, each listening on a port. The player talks only to the Plan; the
 Plan delegates to the four commissariats beneath it.
 
-\begin{lstlisting}
-  you --$ stalin sow|reap ... -->  [ 8801 gosplan ]                the Plan
-                          +---------------+---------------+
-                [8802 agriculture]  [8803 industry]  [8804 transport]
-                                          |
-                                 [8805 foreign trade]
-\end{lstlisting}
+\begin{center}
+\begin{tikzpicture}[
+  box/.style={draw=ink, fill=white, rounded corners=2.5pt, align=center,
+              font=\small\ttfamily, inner sep=4.5pt, minimum width=22mm,
+              minimum height=9mm},
+]
+
+\node[box, fill=pale, font=\small\ttfamily\bfseries] (gos) {gosplan\\:8801};
+\node[lbl, above=1.5mm of gos, font=\small\itshape] {the Plan};
+\node[font=\small\itshape] (you) [left=30mm of gos] {you};
+\draw[ar] (you) -- node[above, pos=0.5, font=\scriptsize\ttfamily]{stalin sow$\mid$reap} (gos);
+
+\node[box] (agri)  [below=20mm of gos, xshift=-49mm] {agriculture\\:8802};
+\node[box] (ind)   [below=20mm of gos, xshift=-16.5mm] {industry\\:8803};
+\node[box] (tran)  [below=20mm of gos, xshift= 16.5mm] {transport\\:8804};
+\node[box] (trade) [below=20mm of gos, xshift= 49mm] {trade\\:8805};
+
+\draw[ar] (gos) -- (agri);
+\draw[ar] (gos) -- (ind);
+\draw[ar] (gos) -- (tran);
+\draw[ar] (gos) -- (trade);
+
+\begin{scope}[on background layer]
+\node[fit=(agri)(ind)(tran)(trade), draw=grey, dashed, rounded corners=3pt,
+      inner sep=2.8mm, label={[subt, font=\small\itshape]below:the four commissariats}] {};
+\end{scope}
+
+\end{tikzpicture}
+\end{center}
+
+Every arrow is a delegation, and every arrow points away from the Plan: the Plan is the only
+client any of them has. The four do not talk to each other, and none of them can see the others'
+books --- which is what makes the picture a star rather than a chain, and what makes the levels
+separable in the first place.
 
 They could have been five modules with a function call at every hop. The comment at the top of
 \texttt{wire.ts} says why they are not:
@@ -1283,14 +1310,14 @@ Each turn is one of the four compositions, and which one it is makes a claim abo
 rather than being a detail of the code.
 
 \begin{center}\small
-\begin{tabular}{@{}lll@{}}
+\begin{tabular}{@{}llp{62mm}@{}}
 \toprule
 & \textbf{composite} & \textbf{why that one} \\
 \midrule
 spring & (agri $\boxtimes$ mill) $\boxtimes$ rail & all three work at once and \emph{all three
-owe a report}; there is no partial year \\
+owe a report}; there is no partial year \\[1mm]
 autumn & transport $\lhd$ trade & what may be sold is computed \emph{from} what the railway
-actually moved \\
+actually moved \\[1mm]
 build  & tractors $\times$ armaments & the same steel, one decision: offer both, answer one \\
 \bottomrule
 \end{tabular}
