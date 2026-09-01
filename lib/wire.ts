@@ -34,6 +34,21 @@ export async function delegate(
   prompt: unknown,
   depth: number,
 ): Promise<unknown> {
+  // A hop costs a process, which is the whole point: control genuinely flows
+  // down, and the boundary is real rather than a function call wearing a
+  // costume. It also costs about a fifth of a second, and a parameter search
+  // that plays a hundred games pays that forty times per game. STALIN_INPROC
+  // keeps the HTTP hop — same servers, same handlers, same books, same weather
+  // — and skips only the spawn. It is off by default and no game the player
+  // ever sees uses it; it exists so the balance harness can finish.
+  if (Deno.env.get("STALIN_INPROC") === "1") {
+    const res = await fetch(`http://localhost:${port}`, {
+      method: "POST", headers: depthHeaders(depth), body: JSON.stringify(prompt),
+    });
+    const text = await res.text();
+    if (!res.ok) throw new Error(`delegate to :${port} answered ${res.status} — ${text}`);
+    return JSON.parse(text) as unknown;
+  }
   const script = new URL("./delegate.ts", import.meta.url).pathname;
   const cmd = new Deno.Command("deno", {
     args: [

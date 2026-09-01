@@ -16,11 +16,16 @@ const Y = (s: string) => `\x1b[33m${s}\x1b[0m`;
 const USAGE = `stalin — the First Five-Year Plan, 1928-1932
 
   stalin new [--seed N]
-  stalin plan --labour F,D,M,R --procure light|firm|total
-              [--export none|surplus|full|maximum] [--steel none|buy|sell]
+  stalin sow  --labour F,D,M,R --procure light|firm|total
+  stalin reap [--export none|surplus|full|maximum] [--steel none|buy]
               [--buy engineers|tools|tractors|nothing] [--build tractors|armaments]
+
   stalin status
   stalin reckoning
+
+  A year is two turns. In SPRING you fix the hands and the quota, before you
+  know the weather. In AUTUMN the harvest is in and graded, and you dispose
+  of it knowing exactly what it was.
 
   --labour   how the living are set to work: Fields, Drivers, Mill, Rail.
              Shares, normalised to the population. Drivers without tractors are
@@ -31,7 +36,8 @@ const USAGE = `stalin — the First Five-Year Plan, 1928-1932
              what the villages eat.
   --export   how much of the state's grain is offered to the port. A failed
              harvest permits nothing; the type system will not let it.
-  --steel    buy steel abroad while in deficit, sell it once in surplus.
+  --steel    buy steel abroad while in deficit. Steel is never sold: a plan
+             that exports its steel is not industrialising.
   --build    where this year's steel goes. Not a share: a decision. Armaments
              return nothing else, ever — they are only worth anything if 1941
              happens.`;
@@ -74,7 +80,7 @@ function showYear(r: Record<string, unknown>): void {
   console.log(`  steel     ${pad(r.steel)}  (${r.steelPosition})` +
     `   tractors +${n(r.tractorsBuilt) + imp}${imp > 0 ? ` (${imp} imported)` : ""}   rail +${r.railAdded}`);
   console.log(`  traded    ${pad(r.goldEarned)} gold` +
-    D(`   grain out ${r.grainExported}   steel out ${r.steelExported}   steel in ${r.steelImported}`));
+    D(`   grain out ${r.grainExported}   steel in ${r.steelImported}`));
   console.log(`  reserve   ${pad(s.warReserve)}  for 1941` +
     D(`   engineers ${s.engineers}   plant ${s.plantCapacity}`));
   const dead = n(r.dead);
@@ -92,16 +98,32 @@ switch (cmd) {
     console.log(D(`  Germany, 1941. The reserve you leave decides what the war costs.\n`));
     break;
   }
-  case "plan": {
+  case "sow": {
     const [f, d, m, rr] = flag("labour").split(",").map(Number);
     if ([f, d, m, rr].some((x) => !Number.isFinite(x))) {
       console.error("stalin: --labour wants four numbers, e.g. 90,5,10,10");
       Deno.exit(2);
     }
-    const r = await ask({ tag: "Plan", order: {
+    const r = await ask({ tag: "Sow", order: {
       procurement: flag("procure"),
       labour: { fields: f, drivers: d, mill: m, rail: rr },
-      exportGrain: flag("export", "none"),
+    } });
+    const h = r.harvest as Record<string, number>;
+    console.log("");
+    console.log(B(`  ${r.year} — sown`));
+    console.log(`  harvest   ${pad(h.grain)}  (${h.grade}, ${h.perWorker}/worker)` +
+      D(`   without tractors: ${h.withoutTractors}`));
+    console.log(`  steel     ${pad(r.steel)}  (${r.steelPosition})   rail +${r.railAdded}`);
+    console.log(`  the quota leaves the villages ${pad(r.villageGrain)}` +
+      (n(r.villageShortfall) > 0
+        ? R(`   ${n(r.villageShortfall)} short of what they eat`)
+        : G("   enough")));
+    console.log("");
+    break;
+  }
+  case "reap": {
+    const r = await ask({ tag: "Reap", order: {
+      exportGrain: flag("export", "surplus"),
       tradeSteel: flag("steel", "none"),
       buy: flag("buy", "nothing"),
       build: flag("build", "tractors"),
@@ -150,8 +172,8 @@ switch (cmd) {
       console.log(D(`                 15% | 33%  | 65% of the harvest taken; the rest is what the village eats`));
       console.log(`    --export   none | surplus | full | maximum`);
       console.log(D(`                 decided against the harvest grade; a failed harvest permits only "none"`));
-      console.log(`    --steel    none | ${mark(pos === "deficit", "buy")} | ${mark(pos === "surplus", "sell")}`);
-      console.log(D(`                 buy only in deficit, sell only in surplus. The mill runs BEFORE the`));
+      console.log(`    --steel    none | ${mark(pos === "deficit", "buy")}`);
+      console.log(D(`                 buy only in deficit. The mill runs BEFORE the`));
       console.log(D(`                 trade delegation, so this is re-judged in autumn — a January deficit`));
       console.log(D(`                 can be an autumn surplus. Dimmed is what January says, not autumn.`));
       console.log(`    --buy      engineers | tools | tractors | nothing`);

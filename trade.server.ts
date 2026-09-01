@@ -7,14 +7,13 @@
 // contain "sell", so selling steel you do not have is a move that cannot be
 // written down.
 
-import { type Gold, type Grain, type Steel, RULES, isNum, isRecord, isStr } from "./state.ts";
+import { type Gold, type Grain, RULES, isNum, isRecord, isStr } from "./state.ts";
 import type { CensusReturn, Dispatch, PurchaseReport, ResetAck, SaleReport } from "./containers.ts";
 import { Books, round } from "./commissariat.ts";
 import { serveContainer } from "./lib/wire.ts";
 
 export type TdPrompt =
   | { tag: "SellGrain"; grain: Grain; year: number }
-  | { tag: "SellSteel"; steel: Steel; year: number }
   | { tag: "BuySteel"; grain: Grain; year: number }
   | { tag: "Hire"; gold: Gold; want: "engineers" | "tools"; year: number }
   | { tag: "BuyTractors"; gold: Gold; year: number }
@@ -24,7 +23,6 @@ export type TdPrompt =
 
 export interface TdResponses {
   SellGrain: SaleReport;
-  SellSteel: SaleReport;
   BuySteel: PurchaseReport;
   Hire: { engineers: number; plantCapacity: number; goldUsed: number };
   BuyTractors: { tractors: number; goldUsed: number };
@@ -41,7 +39,6 @@ let books = new Books("Narkomvneshtorg", seed + 5, 0.1, 1.0);
 
 let goldEarned = 0;
 let grainSold = 0;
-let steelSold = 0;
 let steelBought = 0;
 let tractorsBought = 0;
 
@@ -67,12 +64,7 @@ const handlers: Handlers = {
 
   // Steel holds its value while grain collapses. That divergence is the whole
   // argument for the transition, and the player can watch it happen.
-  SellSteel: (p) => {
-    const gold = round(p.steel / RULES.steelPerGold);
-    goldEarned += gold;
-    steelSold += p.steel;
-    return { gold, price: RULES.steelPerGold, sold: round(p.steel) };
-  },
+
 
   BuySteel: (p) => {
     const steel = round(p.grain / RULES.grainPerSteelImport);
@@ -107,7 +99,6 @@ const handlers: Handlers = {
     books = new Books("Narkomvneshtorg", seed + 5, 0.1, 1.0);
     goldEarned = 0;
     grainSold = 0;
-    steelSold = 0;
     steelBought = 0;
     tractorsBought = 0;
     return { ok: true };
@@ -130,8 +121,6 @@ export function parseTd(u: unknown): TdPrompt | null {
   switch (u.tag) {
     case "SellGrain":
       return isNum(u.grain) && isNum(u.year) ? { tag: "SellGrain", grain: u.grain, year: u.year } : null;
-    case "SellSteel":
-      return isNum(u.steel) && isNum(u.year) ? { tag: "SellSteel", steel: u.steel, year: u.year } : null;
     case "BuySteel":
       return isNum(u.grain) && isNum(u.year) ? { tag: "BuySteel", grain: u.grain, year: u.year } : null;
     case "Hire":

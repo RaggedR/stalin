@@ -6,7 +6,7 @@
 
 import type { Fib } from "./lib/algebra.ts";
 import type {
-  Grain, HarvestGrade, People, Procurement, Steel,
+  Grain, HarvestGrade, People, Steel,
   SteelPosition, Stocks, Workforce,
 } from "./state.ts";
 
@@ -63,12 +63,13 @@ export type ExportChoice<G extends HarvestGrade> =
   : "none" | "surplus" | "full" | "maximum";
 
 /** The same trick on the game's central arc. You may buy steel only while in
- *  deficit and sell it only in surplus, so the transition from importing steel
- *  to exporting it is a change of FIBRE, not an `if`. */
+ *  deficit. Steel is never sold — it is the thing the whole plan exists to
+ *  accumulate, and a country that sells it is not industrialising. Which
+ *  choices EXIST is therefore a change of FIBRE, not an `if`: in balance and
+ *  in surplus there is simply nothing to decide. */
 export type SteelTrade<P extends SteelPosition> =
   P extends "deficit" ? "none" | "buy"
-  : P extends "balanced" ? "none"
-  : "none" | "sell";
+  : "none";
 
 /** Introduction rule for a grain-export decision. `G` is inferred from the
  *  grade, so `choice` is contextually typed at that grade alone. */
@@ -124,18 +125,14 @@ export type TransportC =
   | Fib<{ tag: "Reset"; seed: number }, ResetAck>;
 
 // ── Foreign trade (:8805) ─────────────────────────────────────────────
-// The two sale containers are separate so the trade can be a PRODUCT when the
-// railway to the port is narrow (one contract, offer both answer one) and a
-// TENSOR when it is wide (ship both). Rail capacity decides which — §5's own
-// distinction between x and (x), used as a game progression.
-export type GrainSaleC =
-  Fib<{ tag: "SellGrain"; grain: Grain; year: number }, SaleReport>;
-export type SteelSaleC =
-  Fib<{ tag: "SellSteel"; steel: Steel; year: number }, SaleReport>;
-
+// Grain is the only thing that leaves the country. There were two sale
+// containers once, so that the port could be a PRODUCT when the railway to it
+// was narrow (one contract: offer both, answer one) and a TENSOR when it was
+// wide (ship both) — rail capacity choosing between the two. Selling steel is
+// gone, so both collapsed to this single fibre rather than run on a quantity
+// that is always zero.
 export type ForeignTradeC =
-  | GrainSaleC
-  | SteelSaleC
+  | Fib<{ tag: "SellGrain"; grain: Grain; year: number }, SaleReport>
   | Fib<{ tag: "BuySteel"; grain: Grain; year: number }, PurchaseReport>
   | Fib<{ tag: "Hire"; gold: number; want: "engineers" | "tools"; year: number },
         { engineers: number; plantCapacity: number; goldUsed: number }>

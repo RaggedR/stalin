@@ -1,7 +1,13 @@
 # stalin
 
-The First Five-Year Plan as a container. Five servers, five decisions, one
+The First Five-Year Plan as a container. Five servers, ten decisions, one
 reckoning.
+
+A year is two turns. In **spring** you fix where the hands go and how hard the
+villages are squeezed — before you know the weather. In **autumn** the harvest
+comes in graded, and you dispose of it knowing exactly what it was. A quota set
+in March against a harvest that fails in August is not a game mechanic; it is
+how a famine is administered.
 
 Built on the four combinators of §5 of Neil Ghani's *Containers for Typed
 Agentic AI* — `+`, `⊠`, `◁`, `×` as first-class values, vendored unmodified
@@ -12,7 +18,7 @@ Requires [Deno](https://deno.com) 2.x. No install step, no lockfile, no
 dependencies beyond the standard library.
 
 ```
-  you ──$ stalin plan ...──▶ [ 8801 gosplan ]                    the Plan
+  you ─$ stalin sow|reap ...─▶ [ 8801 gosplan ]                  the Plan
                     ┌──────────────┼──────────────┐
         [8802 agriculture]  [8803 industry]  [8804 transport]    commissariats
                                    │
@@ -36,11 +42,14 @@ Industrialise, and win the war in 1941. Both are paid for in the same currency.
   a soldier absent from the line in 1941
 ```
 
-**Steel and soldiers are substitutes.** The same victory can be bought with
-more of one or more of the other, and the price of the second is paid in lives.
-Less steel means more men in the line and more of them dead. More steel means
-fewer. So the question the game asks is not *how much can I extract* but *which
-currency am I paying in*.
+**Steel and soldiers are complements, and partly substitutes.** Combat power is
+`men x manPower + steelPower x sqrt(steel x men)`. A man is worth something
+holding nothing; a shell is worth nothing with nobody to fire it; and the more
+steel each man already carries, the less the next ton adds. The same victory can
+therefore be bought with more of one or more of the other, and the price of the
+second is paid in lives — but neither ever fully replaces the other, and there
+is no stockpile past which another ton buys nothing. So the question the game
+asks is not *how much can I extract* but *which currency am I paying in*.
 
 The trap is that the two costs are not independent. A peasant starved in 1932
 is a soldier missing in 1941, so extracting harder to build steel shrinks the
@@ -64,14 +73,27 @@ The Fordsons came in by the thousand before Stalingrad opened.
 | strategy | starved | fallen | **total dead** | war |
 |---|---|---|---|---|
 | tractors, then armaments | 0 | 16 | **16** | won |
-| armed only in the last year | 0 | 60 | **60** | lost |
-| strip the villages, arm throughout | 59 | 5 | **64** | won |
-| build nothing | 0 | 60 | **60** | lost |
+| gentle arms *(found by search)* | `AJBEBJAJAJ` | 5 | 4 | **9** | won |
+| brutalist mechanisation | `CMKEBIBJNJ` | 15 | 3 | **18** | won |
+| no railway, so the grain rots | `KABEBIBJAJ` | 25 | 4 | **29** | won |
+| partial armaments | `CABEBINJAA` | 21 | 14 | **35** | won |
+| totally brutal | `KJBEAJBJAJ` | 44 | 5 | **49** | won |
+| tractors bought abroad | `AMAMAFAMAF` | 3 | 57 | **60** | lost |
+| never armed | `CAKEBINIAI` | 15 | 52 | **67** | lost |
 
-Three of those win. **The two orderings disagree**: ranked by soldiers dead the
-best plan is to strip the villages (8 fallen, because the survivors are
-lavishly armed); ranked by everyone dead it is the worst thing on the board.
-The game holds both numbers and does not say which is the real one.
+Five of those win. **The two orderings disagree**: ranked by soldiers dead the
+best plan is brutalist mechanisation — 3 fallen, because it ends holding more
+armaments than anything else on the board and an army small enough to carry
+them; ranked by everyone dead it comes second, because the fifteen it starved
+outnumber the one soldier it saved. The game holds both numbers and does not
+say which is the real one.
+
+`calibrate.ts` is the design brief written as a test: eight things the game is
+meant to say at once, measured together, because they are coupled and tuning
+one at a time walks in circles. Seven hold. The eighth — that brutalist
+mechanisation should be *optimal* — does not, and `implementation.pdf` explains
+why it is a dependency length rather than a number: the mechanised economy
+matures in 1932 and then the plan ends.
 
 ## Play
 
@@ -80,27 +102,30 @@ The game holds both numbers and does not say which is the real one.
 ```
 
 A plan keeps its letter for the whole game — unavailable ones stay in place,
-greyed, with the reason. So a sequence of letters really is a strategy.
-`B E B E J` wins on seed 1928 with nobody starved and five men lost.
+greyed, with the reason. So a sequence of letters really is a strategy, and
+`letters.ts` searches that space directly. Spring offers `A B C D K L N`,
+autumn `A E F G I J M`; ten letters is a whole game.
 
 Or drive it by flags, which is scriptable and deterministic:
 
 ```
 ./up.sh
 deno run --allow-net stalin.ts new --seed 1928
-deno run --allow-net stalin.ts plan --labour 95,0,12,8,0 --procure firm \
-    --export surplus --buy engineers --build tractors
-...five times...
+deno run --allow-net stalin.ts sow  --labour 95,0,12,8 --procure firm
+deno run --allow-net stalin.ts reap --export surplus --buy engineers \
+    --build tractors
+...five times each...
 deno run --allow-net stalin.ts reckoning
 ./down.sh
 ```
 
-`--labour F,D,M,R,A` sets Fields, Drivers, Mill, Rail, Army. Drivers without
+`--labour F,D,M,R` sets Fields, Drivers, Mill, Rail. Drivers without
 tractors are wasted; tractors without drivers are monuments. Everyone eats,
 but only the first two grow anything — which is why moving a peasant into the
 mill costs you twice.
 
-`./playthrough.sh "<plan args>" ...` scripts a whole game. Deterministic on the
+`./playthrough.sh "<sow args>" "<reap args>" ...` scripts a whole game,
+arguments alternating by season. Deterministic on the
 seed, so a playthrough is a regression test.
 
 ## Where the type system is doing the work

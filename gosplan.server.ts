@@ -17,13 +17,14 @@
 // reckoning.
 
 import {
-  type Grain, type HarvestGrade, type Procurement, type Steel, type Stocks,
+  type HarvestGrade, type Procurement, type Steel, type SteelPosition, type Stocks,
   type Workforce, RULES, fightWar, gradeSteel, isNum, isProcurement, isRecord,
-  isStr, living, rural, throughputOf,
+  isStr, living, rural,
 } from "./state.ts";
+import type { HarvestReport, RailReport, SmeltReport } from "./containers.ts";
 import {
-  type AgricultureC, type ArmamentsC, type ForeignTradeC, type GrainSaleC,
-  type SmelterC, type SteelSaleC, type SteelTrade, type TractorWorksC,
+  type AgricultureC, type ArmamentsC, type ForeignTradeC,
+  type SmelterC, type SteelTrade, type TractorWorksC,
   type TransportC, type YearReport,
   exportPlan, steelPlan,
 } from "./containers.ts";
@@ -34,7 +35,6 @@ import { round } from "./commissariat.ts";
 const AGRI = 8802, IND = 8803, TR = 8804, TD = 8805;
 
 // ── Decoders: `unknown` off the wire, back to a position ──────────────
-const num = (u: unknown) => (isNum(u) ? u : null);
 const rec = <T>(keys: readonly string[], u: unknown): T | null => {
   if (!isRecord(u)) return null;
   for (const k of keys) if (!(k in u)) return null;
@@ -67,15 +67,8 @@ const transport = leaf<TransportC>("transport", TR, {
   Census: (u) => rec(["workforce", "stocks", "trueOutput"], u),
   Reset: (u) => rec(["ok"], u),
 });
-const grainSale = leaf<GrainSaleC>("grainSale", TD, {
-  SellGrain: (u) => rec(["gold", "price", "sold"], u),
-});
-const steelSale = leaf<SteelSaleC>("steelSale", TD, {
-  SellSteel: (u) => rec(["gold", "price", "sold"], u),
-});
 const trade = leaf<ForeignTradeC>("trade", TD, {
   SellGrain: (u) => rec(["gold", "price", "sold"], u),
-  SellSteel: (u) => rec(["gold", "price", "sold"], u),
   BuySteel: (u) => rec(["steel", "grainUsed"], u),
   Hire: (u) => rec(["engineers", "plantCapacity", "goldUsed"], u),
   BuyTractors: (u) => rec(["tractors", "goldUsed"], u),
@@ -92,15 +85,35 @@ const build         = productC(tractorWorks, armaments,       //  x  one steel, 
   // The policy reads the decision off the shape: the side that was offered
   // the steel is the side that answers.
   ({ a }) => (a.steel > 0 ? "a" : "b"));
-const narrowSale    = productC(grainSale, steelSale,          //  x  one contract
-  ({ a }) => (a.grain > 0 ? "a" : "b"));
-const wideSale      = tensorC(grainSale, steelSale);          // (x) both, once the port line is wide
 
-export const flowLabel = `${supply.label} ; ${build.label} ; ${narrowSale.label} | ${wideSale.label}`;
+export const flowLabel = `${supply.label} ; ${build.label}`;
 
 // ── The Plan's own state ──────────────────────────────────────────────
+/** What spring committed and autumn has yet to dispose of. */
+interface Pending {
+  workforce: Workforce;
+  take: number;
+  harvest: HarvestReport;
+  smelt: SmeltReport;
+  rail: RailReport;
+  stateGrain: number;
+  villageGrain: number;
+  indMouths: number;
+}
+
 interface Game {
   year: number;
+  season: "spring" | "autumn";
+  pending: Pending | null;
+  /** The quota is a STANDING decree, not an annual negotiation. It was per-turn
+   *  when a year was one turn, which was harmless then: labour and quota went
+   *  out in the same order. Splitting the year made them compete for the same
+   *  spring slot, and squeezing the villages became strictly dominated — you
+   *  could set a total quota or staff the mill, never both, so the grain you
+   *  took had nothing to smelt with. Carrying it forward restores the choice
+   *  the game is built around, and matches how procurement actually worked:
+   *  a decree stands until another decree replaces it. */
+  procurement: Procurement;
   seed: number;
   stocks: Stocks;
   workforce: Workforce;
@@ -114,6 +127,9 @@ interface Game {
 
 const fresh = (seed: number): Game => ({
   year: RULES.startYear,
+  season: "spring",
+  pending: null,
+  procurement: "firm",
   seed,
   // 1928 was not year zero: there was a little steel, one foreign engineer,
   // and a railway that already reached somewhere.
@@ -174,16 +190,25 @@ function resolveSteel(steel: Steel, committed: Steel, want: string):
       return { choice: c.choice, refused: want !== "none" };
     }
     case "surplus": {
-      const ok = want === "sell";
-      const c = steelPlan("surplus", ok ? "sell" : "none");
-      return { choice: c.choice, refused: !ok && want !== "none" };
+      // Nothing to decide: steel in hand is the point of the plan.
+      const c = steelPlan("surplus", "none");
+      return { choice: c.choice, refused: want !== "none" };
     }
   }
 }
 
-export interface PlanOrder {
+/** Spring. You commit the hands and fix the quota BEFORE you know what the
+ *  weather will do — which is not a game mechanic, it is what a quota is. A
+ *  procurement set in March against a harvest that fails in August is the
+ *  whole of how a famine is administered. */
+export interface SowOrder {
   procurement: Procurement;
   labour: { fields: number; drivers: number; mill: number; rail: number };
+}
+
+/** Autumn. The harvest is in and graded, and now you dispose of it. Every
+ *  decision here is made knowing what spring's gamble returned. */
+export interface ReapOrder {
   exportGrain: string;
   tradeSteel: string;
   buy: "engineers" | "tools" | "tractors" | "nothing";
@@ -195,23 +220,25 @@ export interface PlanOrder {
 
 export type GosPrompt =
   | { tag: "Reset"; seed: number }
-  | { tag: "Plan"; order: PlanOrder }
+  | { tag: "Sow"; order: SowOrder }
+  | { tag: "Reap"; order: ReapOrder }
   | { tag: "Status" }
   | { tag: "Reckoning" };
 
-async function runYear(order: PlanOrder, depth: number): Promise<YearReport> {
+/** SPRING. Commit the hands, fix the quota, and let the year happen. The
+ *  tensor runs here — fields, mill and railway all work through the season and
+ *  all three owe a report — and what comes back is the news you will have to
+ *  dispose of in autumn. You do not get to see it first. */
+async function runSpring(order: SowOrder, depth: number) {
   const year = game.year;
   const s = game.stocks;
 
-  // Allocate. Nobody may be conjured: the shares are normalised to the living.
   const alive = living(game.workforce);
   const l = order.labour;
   const asked = l.fields + l.drivers + l.mill + l.rail;
   const k = asked > 0 ? alive / asked : 0;
   // Flooring four shares independently loses up to three people a year, and
-  // they never come back. Whatever the rounding drops goes to the fields, so
-  // an allocation moves people around and never destroys any: the only thing
-  // in this game that reduces the population is starvation.
+  // they never come back. Whatever the rounding drops goes to the fields.
   const w: Workforce = {
     fields: Math.floor(l.fields * k), drivers: Math.floor(l.drivers * k),
     mill: Math.floor(l.mill * k), rail: Math.floor(l.rail * k),
@@ -220,80 +247,74 @@ async function runYear(order: PlanOrder, depth: number): Promise<YearReport> {
   w.fields += alive - (w.fields + w.drivers + w.mill + w.rail);
   game.workforce = w;
 
-  // ── TENSOR then CHAIN. The three sectors work at once and all three owe a
-  //    report; then what the railway is asked to haul is computed FROM those
-  //    reports. That computation is the second component of the composite
-  //    shape — `next` — and running it is the whole content of <|.
-  trace(depth, "down", "gosplan", supply.label);
+  // ── TENSOR: the three sectors work at once and all three owe a report.
+  trace(depth, "down", "gosplan", produce.label);
   const railSteel = Math.min(s.steel, w.rail * RULES.railPerWorker * RULES.railSteelCost);
-  const take = RULES.procurement[order.procurement];
-  const indMouths = w.mill + w.rail;
-
-  // `next` is a pure function of the first container's position, so what it
-  // decides has to be recovered afterwards rather than assigned inside it.
-  let exp: { choice: string; refused: boolean } = { choice: "none", refused: false };
-
-  const supplied = await supply.run(
-    supply.step(
-      produce.both(
-        fieldsAndMill.both(
-          { tag: "Harvest", workforce: w, tractors: s.tractors, year },
-          { tag: "Smelt", workers: w.mill, millCapacity: s.millCapacity, year },
-        ),
-        { tag: "Lay", workers: w.rail, steel: railSteel, year },
+  const produced = await produce.run(
+    produce.both(
+      fieldsAndMill.both(
+        { tag: "Harvest", workforce: w, tractors: s.tractors, year },
+        { tag: "Smelt", workers: w.mill, millCapacity: s.millCapacity, year },
       ),
-      // The dependency, doing its work: `produced` is typed at the fibre we
-      // prompted, so `produced.left.left` is a HarvestReport and its `grade`
-      // is what decides which export decisions exist at all.
-      (produced) => {
-        const h = produced.left.left;
-        const stateGrain = h.grain * take + s.grain;
-        exp = resolveExport(h.grade, order.exportGrain);
-        const offerPort = exp.choice === "none" ? 0
-          : exp.choice === "surplus" ? Math.max(0, stateGrain - indMouths)
-          : exp.choice === "full" ? stateGrain * 0.6
-          : stateGrain * 0.9;
-        return {
-          tag: "Haul" as const,
-          railCapacity: s.railCapacity + produced.right.added,
-          available: round(stateGrain),
-          needIndustry: indMouths,
-          offerPort: round(offerPort),
-          year,
-        };
-      },
+      { tag: "Lay", workers: w.rail, steel: railSteel, year },
     ),
     depth,
   );
-
-  // The composite position is the product of the two fibres' positions: the
-  // triple that came back from the tensor, and the haul that the triple chose.
-  const harvest = supplied.first.left.left;
-  const smelt = supplied.first.left.right;
-  const rail = supplied.first.right;
-  const haul = supplied.second;
+  const harvest = produced.left.left;
+  const smelt = produced.left.right;
+  const rail = produced.right;
 
   s.steel = round(s.steel - rail.steelUsed + smelt.steel);
   s.railCapacity = round(s.railCapacity + rail.added);
 
+  game.procurement = order.procurement;
+  const take = RULES.procurement[game.procurement];
   const stateGrain = round(harvest.grain * take + s.grain);
   const villageGrain = round(harvest.grain * (1 - take));
 
-  // ── The trade. Which moves exist here was decided by the harvest grade and
-  //    the steel position; `resolveExport`/`resolveSteel` are where the finite
-  //    Sigma is eliminated, and past them nothing illegal can be constructed.
+  game.pending = {
+    workforce: w, take, harvest, smelt, rail, stateGrain, villageGrain,
+    indMouths: w.mill + w.rail,
+  };
+  game.season = "autumn";
+  return {
+    kind: "sown" as const, year, harvest,
+    steel: s.steel, steelPosition: gradeSteel(smelt.steel, RULES.steelCommitment),
+    railAdded: rail.added, stateGrain, villageGrain,
+    /** What the quota, fixed in spring, has left the villages against what
+     *  they need to eat. This is the number that kills people. */
+    villageShortfall: round(Math.max(0, (w.fields + w.drivers) * RULES.eats - villageGrain)),
+    workforce: w, stocks: { ...s },
+  };
+}
+
+/** AUTUMN. The grain is in and graded; now it is disposed of. Which export
+ *  decisions exist at all was settled by the grade — see `resolveExport` — so
+ *  this is where the harvest's fibre does its work. */
+async function runAutumn(order: ReapOrder, depth: number): Promise<YearReport> {
+  const pend = game.pending;
+  if (pend === null) throw new Error("autumn before spring");
+  const year = game.year;
+  const s = game.stocks;
+  const { workforce: w, harvest, smelt, rail, stateGrain, villageGrain, indMouths } = pend;
+
+  const exp = resolveExport(harvest.grade, order.exportGrain);
+  const offerPort = exp.choice === "none" ? 0
+    : exp.choice === "surplus" ? Math.max(0, stateGrain - indMouths)
+    : exp.choice === "full" ? stateGrain * 0.6
+    : stateGrain * 0.9;
+
+  const haul = await transport.run({
+    tag: "Haul", railCapacity: s.railCapacity, available: round(stateGrain),
+    needIndustry: indMouths, offerPort: round(offerPort), year,
+  }, depth);
+
   let importedTractors = 0;
   const committed = RULES.steelCommitment;
-  // The position is production against commitment, not the residue after a
-  // year's spending. A country that smelts thirty and spends thirty is not in
-  // deficit; it is working. Deficit means the mill cannot make what the plan
-  // has already promised — which is exactly when you must buy abroad.
   const st = resolveSteel(smelt.steel, committed, order.tradeSteel);
-  const sellSteel = st.choice === "sell" ? round(s.steel * 0.5) : 0;
   const buyGrain = st.choice === "buy" ? Math.min(haul.toPort, round(stateGrain * 0.15)) : 0;
 
-  let gold = 0, grainExported = 0, steelExported = 0, steelImported = 0;
-  const wide = throughputOf(s.railCapacity) === "wide";
+  let gold = 0, grainExported = 0, steelImported = 0;
   const grainToSell = round(Math.max(0, haul.toPort - buyGrain));
 
   if (buyGrain > 0) {
@@ -302,32 +323,22 @@ async function runYear(order: PlanOrder, depth: number): Promise<YearReport> {
     steelImported = bought.steel;
     grainExported += bought.grainUsed;
   }
-  if (grainToSell > 0 || sellSteel > 0) {
-    // PRODUCT or TENSOR, decided by the railway to the port. One contract
-    // while the line is narrow; both once it can carry them.
-    trace(depth, "down", "gosplan", wide ? wideSale.label : narrowSale.label);
-    if (wide) {
-      const both = await wideSale.run(
-        wideSale.both({ tag: "SellGrain", grain: grainToSell, year },
-                      { tag: "SellSteel", steel: sellSteel, year }), depth);
-      gold = round(both.left.gold + both.right.gold);
-      grainExported += both.left.sold;
-      steelExported = both.right.sold;
-    } else {
-      const sale = await narrowSale.run(
-        narrowSale.offer({ tag: "SellGrain", grain: grainToSell, year },
-                         { tag: "SellSteel", steel: sellSteel, year }), depth);
-      gold = sale.value.gold;
-      if (sale.side === "a") grainExported += sale.value.sold;
-      else steelExported = sale.value.sold;
-    }
-    s.steel = round(s.steel - steelExported);
+  // Grain is the only thing that leaves the country. Steel used to be
+  // sellable, and the port sale was a product when the railway was narrow
+  // (grain OR steel) and a tensor when it was wide (both). Selling steel is
+  // gone — a plan that exports its steel is not industrialising — and with it
+  // those two demonstrations, rather than leave them running on a quantity
+  // that is now always zero. Both combinators are still exercised: the tensor
+  // by the three sectors working the same year, the product by tractors
+  // against armaments.
+  if (grainToSell > 0) {
+    const sale = await trade.run({ tag: "SellGrain", grain: grainToSell, year }, depth);
+    gold = sale.gold;
+    grainExported += sale.sold;
   }
   s.gold = round(s.gold + gold);
 
   if (order.buy === "tractors" && s.gold > 0) {
-    // The other road to mechanisation: buy them ready-made. It needs no
-    // engineer, no mill and no works — and it builds none of those either.
     const bought = await trade.run({ tag: "BuyTractors", gold: s.gold, year }, depth);
     s.gold = round(s.gold - bought.goldUsed);
     s.tractors += bought.tractors;
@@ -342,9 +353,21 @@ async function runYear(order: PlanOrder, depth: number): Promise<YearReport> {
   }
 
   // ── PRODUCT: tractors x armaments. The same steel; offer both, answer one.
-  //    Armaments return nothing at all unless 1941 happens — which is what
-  //    makes this the one decision in the game with no economic hedge.
   trace(depth, "down", "gosplan", build.label);
+  // The works must open BEFORE the build, not after it. Opening it afterwards
+  // was an ordering bug with two heads. First, `build` spends ALL the steel,
+  // so by the time the old check ran there was never 20 left and the works
+  // only ever opened in a year whose build happened to consume nothing —
+  // which is to say, in a year you asked for tractors and had no works to
+  // make them in. Second, a works that opens after the build cannot produce
+  // in the year it opens, so the plant was always a year later than it looked.
+  // Both disappear if the plant takes its steel first, which is also the
+  // sensible reading: you build the factory, then you run it.
+  if (s.plantCapacity === 0 && s.engineers > 0 && s.steel >= RULES.plantSteel) {
+    s.steel = round(s.steel - RULES.plantSteel);
+    s.plantCapacity = RULES.plantCapacity;
+  }
+
   const toTractors = order.build === "tractors";
   let tractorsBuilt = 0;
   if (s.steel > 0) {
@@ -356,8 +379,6 @@ async function runYear(order: PlanOrder, depth: number): Promise<YearReport> {
       ),
       depth,
     );
-    // The position is a reply from exactly ONE side. Narrowing on `side` is
-    // the elimination of Either (R p) (T q).
     if (made.side === "a") {
       tractorsBuilt = made.value.built;
       s.tractors += made.value.built;
@@ -367,39 +388,34 @@ async function runYear(order: PlanOrder, depth: number): Promise<YearReport> {
       s.steel = round(s.steel - made.value.steelUsed);
     }
   }
-  if (s.plantCapacity === 0 && s.engineers > 0 && s.steel >= RULES.plantSteel) {
-    s.steel = round(s.steel - RULES.plantSteel);
-    s.plantCapacity = RULES.plantCapacity;
-  }
 
-  // ── Winter. Two populations, two rations, two ways to die.
   const winter = await agri.run({
     tag: "Winter", ruralRations: villageGrain,
     industrialRations: haul.toIndustry, year,
   }, depth);
 
   const dead = winter.dead;
-  const ruralLoss = winter.starvedRural;
-  const indLoss = winter.starvedIndustrial;
-  const shrink = (n: number, loss: number, pool: number) =>
-    pool <= 0 ? n : Math.max(0, n - Math.round(loss * (n / pool)));
+  const shrink = (nn: number, loss: number, pool: number) =>
+    pool <= 0 ? nn : Math.max(0, nn - Math.round(loss * (nn / pool)));
   const ruralPool = w.fields + w.drivers;
   const indPool = w.mill + w.rail;
   game.workforce = {
-    fields: shrink(w.fields, ruralLoss, ruralPool),
-    drivers: shrink(w.drivers, ruralLoss, ruralPool),
-    mill: shrink(w.mill, indLoss, indPool),
-    rail: shrink(w.rail, indLoss, indPool),
+    fields: shrink(w.fields, winter.starvedRural, ruralPool),
+    drivers: shrink(w.drivers, winter.starvedRural, ruralPool),
+    mill: shrink(w.mill, winter.starvedIndustrial, indPool),
+    rail: shrink(w.rail, winter.starvedIndustrial, indPool),
     dead: w.dead + dead,
   };
 
-  s.grain = round(Math.max(0, stateGrain - haul.toIndustry - grainExported));
+  // Grain the railway could not move ROTS. It was reported as "left at the
+  // sidings" and then quietly kept on the books, which made the railway
+  // optional: you could requisition a mountain and collect it later. It is
+  // the railway that turns a harvest into a resource, so procurement without
+  // track is not thrift, it is a heap of grain going bad in a field.
+  s.grain = round(Math.max(0,
+    stateGrain - haul.toIndustry - grainExported - haul.stranded));
   if (game.baselineOutput === 0) game.baselineOutput = harvest.grain;
 
-  // The dispatches: what each commissariat chooses to say it did.
-  // Each runner is called on its own, not in a loop: iterating heterogeneous
-  // runners would union their generic signatures, and a union of generic
-  // signatures is not callable.
   const notes: string[] = [
     (await agri.run({ tag: "Report", year }, depth)).note,
     (await smelter.run({ tag: "Report", year }, depth)).note,
@@ -408,9 +424,10 @@ async function runYear(order: PlanOrder, depth: number): Promise<YearReport> {
   game.dispatches.push(...notes);
 
   const report: YearReport = {
-    year, harvest, steel: s.steel, importedTractors, steelPosition: gradeSteel(smelt.steel, committed),
+    year, harvest, steel: s.steel, importedTractors,
+    steelPosition: gradeSteel(smelt.steel, committed),
     tractorsBuilt, railAdded: rail.added, goldEarned: gold,
-    grainExported: round(grainExported), steelExported, steelImported,
+    grainExported: round(grainExported), steelExported: 0, steelImported,
     dead, workforce: game.workforce, stocks: { ...s },
     dispatches: [
       ...notes,
@@ -421,6 +438,8 @@ async function runYear(order: PlanOrder, depth: number): Promise<YearReport> {
     ],
   };
   game.history.push(report);
+  game.pending = null;
+  game.season = "spring";
   game.year += 1;
   if (game.history.length >= RULES.years) game.over = true;
   return report;
@@ -428,9 +447,12 @@ async function runYear(order: PlanOrder, depth: number): Promise<YearReport> {
 
 // ── The Books interface of the game ───────────────────────────────────
 export type GosReply =
+  | { kind: "sown"; [k: string]: unknown }
   | YearReport
-  | { kind: "status"; year: number; over: boolean; stocks: Stocks; workforce: Workforce;
-      believed: number; baseline: number }
+  | { kind: "status"; year: number; season: "spring" | "autumn"; over: boolean;
+      stocks: Stocks; workforce: Workforce; believed: number; baseline: number;
+      harvest: HarvestReport | null; villageGrain: number; villageShortfall: number;
+      procurement: Procurement; steelPosition: SteelPosition }
   | { kind: "reckoning"; [k: string]: unknown };
 
 async function answer(p: GosPrompt, depth: number): Promise<GosReply> {
@@ -444,15 +466,40 @@ async function answer(p: GosPrompt, depth: number): Promise<GosReply> {
       await transport.run({ tag: "Reset", seed: p.seed }, depth);
       await trade.run({ tag: "Reset", seed: p.seed }, depth);
       game = fresh(p.seed);
-      return { kind: "status", year: game.year, over: false, stocks: game.stocks,
-               workforce: game.workforce, believed: 0, baseline: 0 };
-    case "Plan":
+      return { kind: "status", year: game.year, season: game.season, over: false,
+               stocks: game.stocks, workforce: game.workforce, believed: 0, baseline: 0,
+               harvest: null, villageGrain: 0, villageShortfall: 0,
+               procurement: game.procurement,
+               steelPosition: gradeSteel(game.stocks.steel, RULES.steelCommitment) };
+    case "Sow":
       if (game.over) throw new Error("the plan is concluded; call reckoning");
-      return await runYear(p.order, depth);
+      if (game.season !== "spring") throw new Error("it is autumn; the harvest is in and must be disposed of");
+      return await runSpring(p.order, depth);
+    case "Reap":
+      if (game.over) throw new Error("the plan is concluded; call reckoning");
+      if (game.season !== "autumn") throw new Error("it is spring; nothing has been sown yet");
+      return await runAutumn(p.order, depth);
     case "Status":
-      return { kind: "status", year: game.year, over: game.over, stocks: game.stocks,
-               workforce: game.workforce, believed: game.reportedGrain,
-               baseline: game.baselineOutput };
+      return { kind: "status", year: game.year, season: game.season, over: game.over,
+               stocks: game.stocks, workforce: game.workforce,
+               believed: game.reportedGrain, baseline: game.baselineOutput,
+               // The standing quota, so a spring menu can keep it rather than
+               // silently reverting to "firm" every turn.
+               procurement: game.procurement,
+               // In autumn this is a FACT — the smelting has already run. A
+               // menu that predicts it from mill workers instead is resolving
+               // its gate against a number the game has moved past, which is
+               // the stale-gate bug this file has produced three times.
+               steelPosition: game.pending
+                 ? gradeSteel(game.pending.smelt.steel, RULES.steelCommitment)
+                 : gradeSteel(game.stocks.steel, RULES.steelCommitment),
+               // Autumn needs to know what came in before it can be disposed of.
+               harvest: game.pending?.harvest ?? null,
+               villageGrain: game.pending?.villageGrain ?? 0,
+               villageShortfall: game.pending
+                 ? round(Math.max(0, (game.pending.workforce.fields + game.pending.workforce.drivers)
+                     * RULES.eats - game.pending.villageGrain))
+                 : 0 };
     case "Reckoning": {
       const survivors = living(game.workforce);
       const war = fightWar(survivors, game.stocks.warReserve);
@@ -488,7 +535,7 @@ export function parseGos(u: unknown): GosPrompt | null {
     case "Reset": return isNum(u.seed) ? { tag: "Reset", seed: u.seed } : null;
     case "Status": return { tag: "Status" };
     case "Reckoning": return { tag: "Reckoning" };
-    case "Plan": {
+    case "Sow": {
       const o = u.order;
       if (!isRecord(o) || !isProcurement(o.procurement)) return null;
       const l = o.labour;
@@ -496,14 +543,19 @@ export function parseGos(u: unknown): GosPrompt | null {
       for (const k of ["fields", "drivers", "mill", "rail"]) {
         if (!isNum(l[k])) return null;
       }
-      if (!isStr(o.exportGrain) || !isStr(o.tradeSteel)) return null;
-      if (o.buy !== "engineers" && o.buy !== "tools" && o.buy !== "tractors" &&
-          o.buy !== "nothing") return null;
-      if (o.build !== "tractors" && o.build !== "armaments") return null;
-      return { tag: "Plan", order: {
+      return { tag: "Sow", order: {
         procurement: o.procurement,
         labour: { fields: l.fields as number, drivers: l.drivers as number,
                   mill: l.mill as number, rail: l.rail as number },
+      } };
+    }
+    case "Reap": {
+      const o = u.order;
+      if (!isRecord(o) || !isStr(o.exportGrain) || !isStr(o.tradeSteel)) return null;
+      if (o.buy !== "engineers" && o.buy !== "tools" && o.buy !== "tractors" &&
+          o.buy !== "nothing") return null;
+      if (o.build !== "tractors" && o.build !== "armaments") return null;
+      return { tag: "Reap", order: {
         exportGrain: o.exportGrain, tradeSteel: o.tradeSteel,
         buy: o.buy, build: o.build,
       } };

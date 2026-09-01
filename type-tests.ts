@@ -44,13 +44,17 @@ expect<SteelTrade<"deficit">>("buy");
 // @ts-expect-error  you cannot sell steel you have not got
 expect<SteelTrade<"deficit">>("sell");
 
+// Selling steel does not exist in any fibre. A country that exports its steel
+// is not industrialising, so the option was removed from the game — and the
+// type is where "removed" is enforced. Once out of deficit there is simply
+// nothing to decide, which is a fibre with one inhabitant, not a disabled
+// button.
+expect<SteelTrade<"surplus">>("none");
+// @ts-expect-error  there is no selling steel, in surplus or anywhere else
 expect<SteelTrade<"surplus">>("sell");
-// @ts-expect-error  and once in surplus there is nothing to buy
+// @ts-expect-error  and once in surplus there is nothing to buy either
 expect<SteelTrade<"surplus">>("buy");
 
-// Balanced is the hinge: neither trade exists, which is what makes the
-// transition from importing steel to exporting it a real event rather than a
-// gradual drift.
 expect<SteelTrade<"balanced">>("none");
 // @ts-expect-error
 expect<SteelTrade<"balanced">>("sell");
@@ -58,7 +62,7 @@ expect<SteelTrade<"balanced">>("sell");
 expect<SteelTrade<"balanced">>("buy");
 
 const buy = steelPlan("deficit", "buy");
-const sell = steelPlan("surplus", "sell");
+const hold = steelPlan("surplus", "none");
 // @ts-expect-error
 const impossible = steelPlan("deficit", "sell");
 

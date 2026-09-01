@@ -34,10 +34,11 @@ export interface Knobs {
   spend: "engineers" | "tractors" | "mixed";
 }
 
-function orders(k: Knobs, yearIdx: number, st: Dict) {
+/** Spring: where the hands go, and how hard the villages are squeezed. The
+ *  weather is not known yet, and neither is the harvest the quota bites into. */
+function sowOrder(k: Knobs, st: Dict) {
   const s = st.stocks as Dict, w = st.workforce as Dict;
   const alive = n(w.fields) + n(w.drivers) + n(w.mill) + n(w.rail);
-  const y = yearIdx + 1;
 
   // A driver is only worth anything if there is a tractor for him.
   const drivers = Math.min(n(s.tractors), Math.max(0, alive - k.mill - k.rail - 20));
@@ -45,13 +46,18 @@ function orders(k: Knobs, yearIdx: number, st: Dict) {
   const rail = Math.min(k.rail, Math.max(0, alive - drivers - mill - 10));
   const fields = Math.max(0, alive - drivers - mill - rail);
 
-  const canMake = Math.min(mill * RULES.millPerWorker * 0.9, n(s.millCapacity));
-  const pos = canMake < RULES.steelCommitment ? "deficit"
-    : canMake < RULES.steelCommitment * 1.5 ? "balanced" : "surplus";
+  // The quota stands, so re-declaring it every spring is harmless but the
+  // knob's meaning is "the decree in force", not "this year's share".
+  return { procurement: k.procure, labour: { fields, drivers, mill, rail } };
+}
 
+/** Autumn: the harvest is in and graded, the steel is made. Everything here is
+ *  decided against numbers that actually exist, which is why the steel position
+ *  is read off the state rather than predicted from mill workers. */
+function reapOrder(k: Knobs, year: number, st: Dict) {
+  const s = st.stocks as Dict;
+  const pos = String(st.steelPosition ?? "balanced");
   return {
-    procurement: k.procure,
-    labour: { fields, drivers, mill, rail },
     exportGrain: k.exportAs,
     tradeSteel: pos === "deficit" ? "buy" : pos === "surplus" ? "sell" : "none",
     buy: k.spend === "tractors"
@@ -60,15 +66,17 @@ function orders(k: Knobs, yearIdx: number, st: Dict) {
       ? "engineers"
       : k.spend === "mixed" && n(s.gold) >= RULES.tractorGold
       ? "tractors" : "nothing",
-    build: y >= k.armsFrom ? "armaments" : "tractors",
+    build: year >= k.armsFrom ? "armaments" : "tractors",
   };
 }
 
 export async function playOne(k: Knobs, seed: number) {
   await ask({ tag: "Reset", seed });
   for (let i = 0; i < RULES.years; i++) {
-    const st = await ask({ tag: "Status" });
-    await ask({ tag: "Plan", order: orders(k, i, st) });
+    const spring = await ask({ tag: "Status" });
+    await ask({ tag: "Sow", order: sowOrder(k, spring) });
+    const autumn = await ask({ tag: "Status" });
+    await ask({ tag: "Reap", order: reapOrder(k, i + 1, autumn) });
   }
   const r = await ask({ tag: "Reckoning" });
   const war = r.war as Dict;

@@ -32,11 +32,15 @@ few peasants as possible.
 
 Peasants then become tractor drivers, railway workers and steel workers.
 
-If you are in surplus of steel you can sell steel abroad as well as grain.
-You need steel to build trains, and at the beginning you can buy steel abroad
-in exchange for grain. But the goal is to transition from exporting grain to
-exporting steel — or to export both: grain produced by the tractors, and
-steel.
+You need steel to build railways, and at the beginning you can buy steel
+abroad in exchange for grain. Steel is never sold: a country that exports its
+steel is not industrialising, and everything the plan is for is made of it.
+Grain is the only export, so the whole apparatus rests on taking grain from
+people who were going to eat it.
+
+And the railway comes first. Grain the railway cannot carry rots at the
+sidings, so a quota set without track to move it is not thrift — it is a
+harvest going bad in a field, and the villages went hungry for nothing.
 
 
 III. THE WAR

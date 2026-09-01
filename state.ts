@@ -67,16 +67,29 @@ export const RULES = {
   startYear: 1928,
   years: 5,
 
-  fieldYield: 2.6,        // grain per field worker
-  tractorYield: 6.0,      // grain per operated tractor (needs one driver)
-  eats: 1.0,              // grain per living worker-unit per year
+  fieldYield: 3.0,        // grain per field worker
+  tractorYield: 10.0,      // grain per operated tractor (needs one driver)
+  // What one person eats in a year. This is the number that decides whether
+  // the game has a clean path through it. At 1.0 the country fed itself with
+  // a third to spare, so a careful plan starved nobody and industrialisation
+  // was free — which is the one thing it certainly was not. Set just above
+  // what a firm quota leaves the villages, so that SOMEBODY starves whatever
+  // you do, and every hand moved off the land is paid for in somebody's ration.
+  eats: 1.05,              // grain per living worker-unit per year
 
   millPerWorker: 3.0,     // steel per mill worker, capped by millCapacity
-  engineerCapacity: 25,   // mill capacity unlocked per engineer
-  railPerWorker: 2.0,     // rail capacity built per rail worker...
+  engineerCapacity: 30,   // mill capacity unlocked per engineer
+// Track laid per railway worker per year. At 2.0 a turn of railway work
+  // added about ten of capacity, so hauling a total quota — a hundred and
+  // fifty of grain — would have taken the whole plan and then some. Once
+  // stranded grain rots, that makes the railway a prerequisite nobody can
+  // afford, and the quota purely destructive. Set so that one turn of track
+  // opens a real amount of throughput and "rail before steel" is advice a
+  // player can actually take.
+  railPerWorker: 8.0,     // rail capacity built per rail worker...
   railSteelCost: 0.5,     // ...costing this much steel per capacity unit
 
-  tractorSteel: 2.0,
+  tractorSteel: 1.0,
   /** What a tonne of steel is worth as armaments. Not a tonne: guns need
    *  tooling, machining and swarf, and an ingot is not a rifle. At one to one
    *  a plan that spent only its last two years arming still ended lavishly
@@ -92,19 +105,19 @@ export const RULES = {
   // Armaments: steel straight into the reserve, and men who must be trained
   // for years before they are soldiers rather than peasants holding rifles.
   warYear: 1941,
-  plantSteel: 20.0,
+  plantSteel: 6.0,
   plantRail: 10.0,
   plantCapacity: 20,      // tractors per year per plant
 
-  engineerGold: 15,
+  engineerGold: 20,
   /** A tractor bought abroad, ready to drive. Expensive against building your
    *  own (2 steel), and it buys no capacity — but it needs no engineer, no
    *  mill and no works, so it is the only mechanisation available in the first
    *  years. The Fordsons came in by the thousand before Stalingrad opened. */
-  tractorGold: 10,
+  tractorGold: 6,
   toolsGold: 25,          // machine tools: +10 plant capacity, no upkeep
 
-  grainPerGold: 3.0,      // grain sold to buy one gold
+  grainPerGold: 2.0,      // grain sold to buy one gold
   steelPerGold: 2.0,      // steel is worth twice grain — the point of the arc
   grainPerSteelImport: 5.0, // buying steel abroad is a bad deal, deliberately
 
@@ -113,7 +126,7 @@ export const RULES = {
   // What the state takes; the remainder is what the village eats. `total` is
   // meant to be what it says: at this rate the countryside does not feed
   // itself, and the arithmetic of that is the point of the game.
-  procurement: { light: 0.15, firm: 0.33, total: 0.65 } as Record<Procurement, number>,
+  procurement: { light: 0.10, firm: 0.25, total: 0.65 } as Record<Procurement, number>,
 
   // ── 1941 ────────────────────────────────────────────────────────────
   // The war is one computation, not a campaign. Steel and men are
@@ -122,7 +135,12 @@ export const RULES = {
   // plan does is ultimately a decision about which currency to pay in.
   war: {
     mobilisableFraction: 0.5, // the rest must farm, or the army starves too
-    enemyPower: 70,
+    // Tuned against a TEN-turn plan. At five turns 70 was a real strain; at
+    // ten you accumulate roughly twice the armaments and 70 became a formality
+    // — the best line won for three dead and the last four turns of the game
+    // did not matter, three different plays tying exactly. 85 puts the
+    // achievable stockpile back on the steep part of the curve.
+    enemyPower: 80,
     // What one soldier is worth with nothing to fire. This is the number that
     // decides whether men alone can win. Too low and a well-fed, lightly-armed
     // country loses outright, which forces every player down the armaments
@@ -137,8 +155,28 @@ export const RULES = {
     // becomes what it actually was: a way to win the war that cost more lives
     // than the alternative. The game keeps the body count and passes no
     // judgement on it.
-    maxSubstitution: 2.0,
+    // How far materiel can stand in for men. This number decides whether the
+    // game is a morality play. If steel cannot substitute for men, a famine is
+    // strategically fatal — cruelty punished by defeat, which is comfortable
+    // and false. If it substitutes freely, a small lavishly-equipped army wins
+    // and starving the villages becomes what it actually was: a way to win the
+    // war that cost more lives than the alternative. The game keeps the body
+    // count and passes no judgement on it.
+    //
+    // It is a COMPLEMENTARITY, not a cap. An earlier version had a hard
+    // ceiling — one soldier could carry at most so much steel, beyond which
+    // the shell did nothing — and the ceiling produced a step function: past
+    // 44 armaments every strategy fought exactly the same war and lost exactly
+    // five men. Four quite different plans scored identically and the game
+    // could not tell them apart. The curve below has no such flat: the steel
+    // term is sqrt(steel x men), so steel always helps and always helps less.
+    // Rifles need hands; hands need rifles; neither ever fully replaces the
+    // other, which is both better arithmetic and better history.
     baseAttrition: 0.55,      // fraction lost with no steel at all
+    // No stockpile buys a bloodless victory. Without a floor the attrition
+    // curve tends to zero, and a large enough pile of armaments won the war
+    // for nobody at all — which reads as a reward rather than as a war.
+    minAttrition: 0.12,
     steelShield: 0.9,         // how fast attrition falls as steel per man rises
   },
 } as const;
@@ -159,35 +197,48 @@ export interface WarOutcome {
  *  armaments it has — and no more. So the armaments decide the size of the
  *  army, and the size of the army decides the dead.
  *
- *  Power is  m · manPower + steelPower · min(W, m · maxSubstitution):  each man
- *  is worth something on his own, and worth more up to the point where he is
- *  fully equipped. Solving for the smallest m that reaches the threshold gives
- *  two regimes — steel-rich, where a small lavish army suffices, and steel-poor,
- *  where the shortfall is made up in bodies. If even the whole available
- *  manpower cannot reach it, the war is lost.
+ *  Power is  m · manPower + steelPower · √(W · m):  men and steel are
+ *  complements. A man is worth something on his own; a shell is worth nothing
+ *  without a man to fire it; and the more steel each man already has, the less
+ *  the next ton adds. Solving for the smallest m that reaches the enemy's
+ *  strength gives one smooth curve — no regimes, no ceiling, no point past
+ *  which another ton of armaments buys nothing. If even the whole available
+ *  manpower cannot reach the threshold, the war is lost.
  */
 export function fightWar(survivors: People, warReserve: Steel): WarOutcome {
   const w = RULES.war;
   const available = Math.max(1, Math.floor(survivors * w.mobilisableFraction));
-  const E = w.enemyPower;
+  const E = w.enemyPower, r = Math.max(0, warReserve);
 
-  // Regime 1: enough steel to equip everyone called up.
-  const lavish = E / (w.manPower + w.steelPower * w.maxSubstitution);
-  // Regime 2: the steel runs out, and the rest is made up in men.
-  const lean = (E - w.steelPower * warReserve) / w.manPower;
-  const needed = lavish <= warReserve / w.maxSubstitution ? lavish : lean;
+  // Combat power of m men holding r steel:
+  //
+  //     P(m, r) = manPower*m + steelPower*sqrt(r*m)
+  //
+  // The cross term is what makes them complements. Solving P = E for the
+  // fewest men that still win, with x = sqrt(m):
+  //
+  //     manPower*x^2 + steelPower*sqrt(r)*x - E = 0
+  //
+  // which is a quadratic with exactly one positive root. As r grows the root
+  // falls smoothly towards zero and never reaches a floor, so there is always
+  // something to be bought with one more ton.
+  const a = w.manPower, b = w.steelPower * Math.sqrt(r);
+  const x = (-b + Math.sqrt(b * b + 4 * a * E)) / (2 * a);
+  const mobilised = Math.max(1, Math.ceil(x * x));
 
-  const mobilised = Math.max(1, Math.ceil(needed));
   const won = mobilised <= available;
   const called = won ? mobilised : available;
-  const steelPerSoldier = warReserve / called;
-  const attrition = Math.min(
-    1, w.baseAttrition / (1 + w.steelShield * Math.min(steelPerSoldier, 1.5)),
-  );
+  const steelPerSoldier = called > 0 ? r / called : 0;
+  // Attrition falls with steel per man on the same diminishing curve, and is
+  // likewise uncapped: a lavishly equipped soldier is always safer than a
+  // slightly less lavishly equipped one.
+  const attrition = Math.min(1, Math.max(w.minAttrition,
+    w.baseAttrition / (1 + w.steelShield * steelPerSoldier)));
   // A war lost is not a war with fewer casualties.
   const fallen = won ? Math.round(called * attrition) : called;
   return { won, mobilised: called, available, steelPerSoldier, attrition, fallen };
 }
+
 
 // ── The grade of a harvest, from the tonnage and the mouths ───────────
 export function gradeHarvest(grain: Grain, mouths: People): HarvestGrade {
