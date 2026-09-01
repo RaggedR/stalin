@@ -1,5 +1,5 @@
 \documentclass[11pt,a4paper]{article}
-\usepackage[margin=25mm]{geometry}
+\usepackage[margin=24mm]{geometry}
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs}
 \usepackage[T1]{fontenc}
@@ -7,24 +7,27 @@
 \usepackage{microtype}
 \usepackage{xcolor}
 \usepackage{listings}
+\usepackage{tikz}
 \usepackage[hidelinks]{hyperref}
+\usetikzlibrary{positioning,arrows.meta,fit,backgrounds}
 
 \definecolor{ink}{HTML}{1A1A1A}
 \definecolor{grey}{HTML}{5F5B54}
 \definecolor{pale}{HTML}{F5F3EE}
+\definecolor{down}{HTML}{1F4E8C}
+\definecolor{up}{HTML}{1F6F4A}
 \definecolor{warn}{HTML}{9C3B1B}
-\definecolor{good}{HTML}{1F6F4A}
 
 \lstdefinestyle{ts}{basicstyle=\ttfamily\footnotesize, showstringspaces=false,
   columns=fullflexible, keepspaces=true, breaklines=true,
   commentstyle=\color{grey}\itshape,
   backgroundcolor=\color{pale}, frame=none, xleftmargin=4mm, framexleftmargin=4mm}
 \lstset{style=ts}
-
 \newcommand{\note}[1]{\medskip\noindent\textbf{\textcolor{warn}{#1}}\quad}
 
 \title{\vspace{-2em}\textbf{How we faked it}\\[2mm]
-  \large A dependent function $(p : P) \to R\,p$, in a language that has none}
+  \large Async event handlers as container morphisms:\\
+  composing shapes forwards while responses flow back}
 \date{\normalsize\today}
 
 \begin{document}
@@ -33,364 +36,268 @@
 
 \begin{abstract}
 \noindent
-Ghani's containers turn on a dependent function: the type of the reply depends
-on the prompt. TypeScript has no dependent types. This note is about the one
-substitution that makes the whole edifice stand --- a generic method whose
-return type is a conditional type applied to the inferred type argument ---
-what it genuinely buys, exactly where it degrades, and the one place the
-project abandons it altogether. Along the way it disposes of a natural
-suspicion: that \texttt{async} had something to do with it. It did not.
+The fake is not a type-level trick with a network attached. \textbf{The fake is
+the async event handler.} A container's inhabitant $(p : P) \to R\,p$ is a
+handler woken by a prompt; a morphism between containers sends shapes
+\emph{forward} and brings responses \emph{back}; and \texttt{await} is what
+allows both directions to be written as one straight-line function, in a server
+that is simultaneously a client. This note is about that, and about what the
+type system does and does not contribute to it.
 \end{abstract}
 
-\section{The thing to be faked}
+\section{A container is an event handler}
 
-An inhabitant of a container $(P, R)$ is a dependent function
+\S3 of Ghani's note observes that event-driven programming ``has a feature that
+turns out to be exactly a dependent type'': which responses are appropriate
+depends on which event arrived. A container $(P, R)$ is that feature written
+down --- $P$ the prompts, $R\,p$ the positions, the responses appropriate to $p$
+--- and an inhabitant of the interface is the dependent function
+$(p : P) \to R\,p$.
+
+In this project that inhabitant is not a metaphor. It is the handler:
+
+\begin{lstlisting}
+serveContainer({
+  name: "agri", port: 8802,
+  parse:  (u: unknown) => AgPrompt | null,      // the prompt arrived as bytes
+  answer: (p: AgPrompt, depth) => Promise<...>, // <-- THIS is  (p : P) -> R p
+});
+\end{lstlisting}
+
+\noindent \texttt{answer} is woken by a socket, receives one prompt, and owes
+exactly the response type that prompt indexes. Five such handlers are running
+while the game is played.
+
+\section{Two directions}
+
+A morphism of containers $(P,R) \to (Q,T)$ is a pair:
 \[
-  (p : P) \to R\,p
+  u : P \to Q
+  \qquad\qquad
+  f : (p : P) \to T\,(u\,p) \to R\,p
 \]
-in which the \emph{type} of the result is computed from the \emph{value} of the
-argument. Ask for a harvest and you get a harvest report; ask for a census and
-you get a census return; and no type in the language relates the two except
-through $p$ itself.
 
-TypeScript has no such construct. What it has is: generic functions, which
-infer a type argument from a value argument; and conditional types, which
-compute a type from a type. Put together they give this:
+\noindent $u$ turns my prompt into one for the level below --- \textbf{shapes
+travel forwards}. $f$ turns their response into mine --- \textbf{responses travel
+back}. Control descends; data ascends. In a game about a command economy that
+is not a coincidence: Gosplan does not reap anything. It converts ``feed the
+towns'' into ``Narkomzem: harvest'', and converts the reply back into a number
+for its own ledger.
+
+The tower prints both directions as it runs. One \texttt{Sow}, across four
+processes:
 
 \begin{lstlisting}
-run<S extends Shape<C>>(shape: S): PosAt<C, S>
+:8801  |- gosplan   Sow order={"procurement":"firm","labour":{...
+:8801  |   |- gosplan   ((agri (x) smelter) (x) transport)
+:8802  |     |- agri      Harvest workforce={"fields":97,...} tractors=0 year=1928
+:8802  |     -| agri      {grain, grade, perWorker, withoutTractors}
+:8803  |     |- industry  Smelt workers=16 millCapacity=8 year=1928
+:8803  |     -| industry  {steel, idleCapacity}
+:8804  |     |- transport Lay workers=7 steel=10 year=1928
+:8804  |     -| transport {added, steelUsed}
+:8801  -| gosplan   {kind, year, harvest, steel, ...}
 \end{lstlisting}
 
-\noindent Three ingredients, and it is worth being precise about which does
-what.
+\noindent \verb#|-# is a shape going forward, \verb#-|# a response coming back.
+Every indent is a morphism.
+
+\section{\texttt{await} is the hinge}
+
+Here is the whole of a morphism, in code:
+
+\begin{lstlisting}
+const reply = await lower.run(u(prompt));   // shapes forward
+return f(prompt, reply);                    // responses back
+\end{lstlisting}
+
+\noindent Both directions, one function body, read top to bottom. That is what
+\texttt{await} buys, and it is the fake. Remove it and there are two options,
+both of which break something:
+
+\note{Callbacks invert the control flow.} Written
+\texttt{lower.run(u(prompt), (reply) => \dots)}, the second half of the morphism
+is no longer the continuation of the first --- it is a separate function handed
+downwards. $f$ can no longer be \emph{returned}; it must be \emph{passed}. Two
+morphisms composed become a callback inside a callback, and the composite is no
+longer expressible as a morphism at all. The algebra survives in the types and
+dies in the code.
+
+\note{Blocking seizes the runtime.} Gosplan is both a server and a client: woken
+by a socket, and while handling that prompt it delegates to four commissariats.
+If those downward calls block --- \texttt{outputSync} rather than \texttt{await}
+--- they block the whole isolate. The server cannot accept another connection
+while it waits for its own subordinates. A blocking handler that delegates is
+not merely slower; it has stalled the event loop it lives in.
+
+\note{So this is the substitution.} \texttt{async}/\texttt{await} is what lets a
+morphism be an ordinary function in a program that is simultaneously listening
+and calling. Shapes compose forwards through $u$, control suspends at the
+\texttt{await}, and responses compose backwards through $f$ --- with the whole
+chain written as though it were sequential code, which is exactly what the
+algebra assumes it is.
+
+\section{The combinators, in both directions}
+
+Each combinator is a way of composing the forward flow, and each has a matching
+rule for the backward one.
 
 \begin{center}
 \footnotesize
-\begin{tabular}{@{}lp{0.68\textwidth}@{}}
+\begin{tabular}{@{}cll@{}}
 \toprule
-\textbf{generic inference} & \texttt{S} is recovered from the argument --- this is
-the only channel by which anything about $p$ reaches the type level \\
-\textbf{conditional type} & \texttt{PosAt<C, S>} computes the position type from
-\texttt{S}, by distributing over the union of fibres \\
-\textbf{a finite index} & makes that distribution \emph{exact}: over a finite $S$,
-$\Sigma\,(s : S).\,B\,s = \bigcup_{s} \{s\} \times B\,s$ \\
-\bottomrule
-\end{tabular}
-\end{center}
-
-\section{Three things that are not the same thing}
-
-It is easy --- and this note managed it for several drafts --- to run together
-three decisions that are in fact independent:
-
-\begin{center}
-\footnotesize
-\begin{tabular}{@{}lp{0.42\textwidth}p{0.34\textwidth}@{}}
-\toprule
-& \textbf{what it is} & \textbf{what it needs} \\
+& \textbf{shapes forward} & \textbf{responses back} \\
 \midrule
-the \textbf{algebra} & prompts, positions, the four combinators
-  & generics, conditional types, a finite index. Nothing else. \\
-the \textbf{location} & where the handler lives: this process, another process,
-  another machine & a function call, a spawn, or HTTP \\
-the \textbf{blocking} & whether the caller waits & independent of both above \\
+$\boxtimes$ & a prompt to each side, dispatched together & a reply from \emph{each}; the position is a pair \\
+$\times$    & a prompt to each side                      & a reply from \emph{exactly one} \\
+$+$         & a prompt to one side                       & that side's position, unchanged \\
+$\lhd$      & the second prompt is \emph{built from the first reply} & a pair of replies \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-\noindent HTTP does not force asynchrony in your own code; asynchrony does not
-require a network (\texttt{setTimeout} touches nothing); and the algebra
-requires neither. The rest of this section takes them apart one at a time.
-
-\subsection*{\texttt{async} has nothing to do with it}
-
-The real signature carries a \texttt{Promise}, which invites the thought that
-concurrency is somehow load-bearing. It is not. Here is the same encoding with
-no \texttt{Promise}, no \texttt{await}, and no socket:
+\subsection*{$\boxtimes$ --- forward together}
 
 \begin{lstlisting}
-interface SyncRunner<C extends Cont> {
-  readonly fibres?: C;
-  run<S extends Shape<C>>(shape: S): PosAt<C, S>;    // no Promise
-}
-declare const agri: SyncRunner<Agri>;
-
-const h = agri.run({tag: "Harvest", year: 1930});
-const c = agri.run({tag: "Census"});
-const grain: number = h.grain;        // typed HarvestReport, uncast
-const hands: number = c.workforce;    // typed CensusReturn,  uncast
-// @ts-expect-error   a Census reply has no `grain`
-const wrong: number = c.grain;
+const [left, right] = await Promise.all([a.run(s.left, d), b.run(s.right, d)]);
+return { left, right };
 \end{lstlisting}
 
-\noindent That file typechecks with zero errors, and the negative assertion
-fires --- TypeScript reports an unused \texttt{@ts-expect-error} as an error in
-its own right, so its silence is evidence that the dependency really bites.
+\noindent Both shapes existed before the call, so neither can depend on the
+other's reply --- independence enforced by the shape type
+$\{\texttt{left}, \texttt{right}\}$, not by the scheduler. The
+\texttt{Promise.all} is concurrency; a synchronous tensor firing its two hops in
+sequence is the same combinator, and slower.
 
-\note{So why is the real thing \texttt{async}?} Because the reply arrives from
-another process over a socket. Causation runs the other way from the suspicion:
-we chose real process boundaries, and \emph{that} forced \texttt{Promise}.
-Ghani's own point in \S3 is that what makes a program event-driven is the
-prompt-indexed response type, not the event loop --- strip the waiting away and
-the container is what remains.
+\subsection*{$\lhd$ --- where the two directions interleave}
 
-\note{One thing \texttt{async} does buy.} It makes $\boxtimes$ against $\lhd$
-visible in the \emph{execution} and not only in the types. The tensor fires
-both prompts at once and requires both replies; the sequential composition
-cannot even construct its second prompt until the first reply is in hand:
+This is the one that needs the hinge, and the reason the sequential composition
+is the hard combinator:
 
 \begin{lstlisting}
-const [l, r]  = await Promise.all([a.run(s.left, d), b.run(s.right, d)]);  // (x)
-const first   = await a.run(s.first, d);
-const second  = await b.run(s.next(first), d);                            //  <|
+const first  = await a.run(s.first, depth);          // forward, then BACK
+const second = await b.run(s.next(first), depth);    // the reply BECOMES the
+                                                     // next shape: forward again
 \end{lstlisting}
 
-\noindent Synchronously these would be two calls in a row either way, and the
-difference would live entirely in the types.
-
-\note{A correction.} The source comment on that \texttt{Promise.all} says it
-``is not an optimisation here; it is the definition''. That is an overstatement,
-and writing a synchronous tower disproves it. The tensor is defined by both
-shapes being supplied \emph{up front} and both replies being owed --- and that
-independence is enforced by the shape type $\{\texttt{left}: S_A,\ \texttt{right}:
-S_B\}$, not by concurrency. You cannot make the right prompt depend on the left
-reply, because you had to construct it before calling \texttt{run}.
-\texttt{Promise.all} adds parallelism, not meaning.
-
-\subsection*{So it could have been synchronous --- and here it is}
-
-\texttt{sync-tower.ts} is the same construction with no \texttt{async},
-\texttt{await} or \texttt{Promise} anywhere in the algebra. A hop blocks:
-
-\begin{lstlisting}
-new Deno.Command("deno", {args: [...delegate...], stdout: "piped"}).outputSync()
-\end{lstlisting}
-
-\noindent It runs a tensor over two live commissariats and returns typed,
-uncast positions. This inverts how the architecture looks. Deno has no
-synchronous \texttt{fetch} and no synchronous HTTP client at all, so an
-\emph{in-process} tower would have had no choice but to be async. It is
-precisely because a hop is a spawned CLI tool that the algebra can block: the
-child does the asynchronous fetch inside its own event loop, and the parent
-simply waits. The decision that looks more distributed is the one that made
-synchrony available.
-
-What cannot be synchronous is the \emph{listening} side --- \texttt{Deno.serve}
-handlers are async and there is no blocking HTTP server. But that is outside
-the algebra, and the line falls exactly where \S3 says it should:
-\textbf{the container algebra can be synchronous; the event loop cannot.}
-
-\subsection*{And it needed no wire at all}
-
-Strip the last of it away. \texttt{local-tower.ts} is the same algebra with no
-HTTP, no processes, no event loop and no \texttt{async} --- a leaf is a table of
-handler functions, and a hop is a call:
-
-\begin{lstlisting}
-function local<C extends Cont>(label: string, handlers: ...): Runner<C> {
-  return { label, run: <S extends Shape<C>>(shape: S) =>
-    handlers[(shape as {tag: string}).tag](shape as never) as PosAt<C, S> };
-}
-
-const t = tensor(fields, fields);
-const pair = t.run(t.both({tag: "Harvest", hands: 105}, {tag: "Census"}));
-const g: number = pair.left.grain;    // typed HarvestReport -- uncast
-const h: number = pair.right.hands;   // typed CensusReturn  -- uncast
-
-const s = seq(fields, rail);
-const chain = s.run(s.step({tag: "Harvest", hands: 105},
-                           (r) => ({tag: "Haul", grain: r.grain})));  // <-- <|
-\end{lstlisting}
-
-\noindent It runs under \texttt{deno run} with \emph{no permissions at all} ---
-no \texttt{-{}-allow-net}, no \texttt{-{}-allow-run}, no \texttt{-{}-allow-read}
---- because it touches nothing. The tensor and the sequential composition behave
-exactly as they do across the wire, and every position is typed and uncast.
-
-\note{So why is there a wire?} Two reasons, neither of them about types. The
-first is that the brief asked for one: several servers, possibly on different
-machines, reached by a CLI tool. The second is the interesting one. Every
-commissariat holds a hidden efficiency and a bias --- how much it inflates a
-shortfall --- and the player plans against the reports rather than the truth. In
-a single process that privacy is a \emph{convention}: module-scoped state, one
-stray import from collapsing. Across five processes with nothing but JSON
-between them it is enforced by the operating system, because there is no
-reference to reach through. The game's subject is an information asymmetry, and
-the wire is what makes the asymmetry a fact instead of a promise. It costs about
-a fifth of a second per hop.
-
-\section{Where the dependency is exact}
-
-The substitution works when the compiler can see \emph{which fibre} a prompt
-lies in. Two cases, both verified:
-
-\begin{lstlisting}
-const a = agri.run({tag: "Harvest", year: 1930});      // S = the literal shape
-                                                       // -> {grain: number}   EXACT
-
-const p: Shape<Agri> = {tag: "Harvest", year: 1930};   // declared as the union...
-const b = agri.run(p);                                 // ...but narrowed by the
-                                                       // discriminant -> EXACT
-\end{lstlisting}
-
-\noindent The second was a surprise. A \texttt{const} declared at the union
-type but initialised with a literal is narrowed by its discriminant tag, so the
-dependency survives being written down as a variable. The encoding is more
-robust than it looks.
-
-\subsection*{The introduction rules do the real work}
-
-Each combinator ships a constructor for its shapes, and each is generic in the
-fibre. That is what keeps \texttt{S} narrow through a composite. The sequential
-one is the deepest instance:
+\noindent \texttt{s.next(first)} is the whole content of $\lhd$. A response
+flowing back turns around and becomes a shape flowing forward. The composite's
+shape is therefore not a pair of prompts but a prompt \emph{together with a
+function} from its replies to the next prompt:
 
 \begin{lstlisting}
 step<SA extends Shape<A>, SB extends Shape<B>>(
   first: SA,
-  next: (r: PosAt<A, SA>) => SB,
-): {first: SA; next: (r: PosAt<A, SA>) => SB}
+  next: (r: PosAt<A, SA>) => SB,          // SA inferred from `first`, so `next`
+)                                          // is typed at THAT fibre alone
 \end{lstlisting}
 
-\noindent \texttt{SA} is inferred from \texttt{first}, so \texttt{next} is
-contextually typed at \emph{that fibre alone}: it receives the positions of the
-shape you actually gave, not a union over all of them. This is the $\Sigma$-type
-faked --- not a pair of prompts, but a prompt together with a function from its
-replies to the next prompt. And it is why, in the game,
-\texttt{supplied.first.toPort} is a \texttt{HaulReport} field with no cast at
-the call site.
+\noindent In the game: what you may \emph{sell} depends on what the railway
+actually \emph{moved}, and the trade delegation cannot be asked anything until
+the haul has answered.
 
-\section{Where it degrades}
+\section{The tower makes the chain real}
 
-The fake carries the dependency on the \textbf{static type} of the argument,
-never on its runtime value. So it fails precisely where the compiler cannot see
-a single fibre --- and the commonest such place is a \emph{forwarder}: any
-helper generic over the container's prompts.
+$u$ is not a function call. It is a CLI tool:
 
 \begin{lstlisting}
-function forward(shape: Shape<Agri>) {
-  return agri.run(shape);          // S is now the WHOLE union
-}
-const c = forward({tag: "Harvest", year: 1930});
-// c : {grain: number} | {workforce: number}      <-- the dependency is gone
+delegate.ts <port> <json-prompt> <depth>      # stdout is the reply
 \end{lstlisting}
 
-\noindent \texttt{PosAt} distributes over \texttt{S} as well as over \texttt{C},
-so a union argument yields the union of \emph{all} positions. Note what this is
-and is not. It is not unsound --- you cannot read \texttt{grain} off it without
-narrowing first, and the compiler will stop you. But the dependency has been
-traded for a disjunction, and the caller must re-discover by hand what the type
-system knew one frame earlier.
+\noindent It knows nothing about any container --- port, JSON, depth, and it
+carries the text across. That ignorance is the point: $u$ is a map of shapes,
+and shapes are what survive a wire. A CLI tool calls a CLI tool, whose server
+calls another, and the responses compose back up the same chain; the
+\texttt{depth} header is what indents the trace above.
 
-\note{This is the precise sense in which it is a fake.} A genuine
-$(p : P) \to R\,p$ returns $R\,p$ for the actual runtime $p$, always, including
-inside a forwarder. This returns the exact position only where the compiler
-statically knows the fibre, and the union everywhere else. The dependency is on
-the singleton type TypeScript infers, not on the value.
+\note{Why processes rather than function calls.} Each commissariat holds a
+hidden efficiency and a bias --- how much it inflates a shortfall --- and the
+player plans against the reports, not the truth. Inside one process that privacy
+is a convention, one stray import from collapsing. Across five processes with
+only JSON between them the operating system enforces it: there is no reference
+to reach through. The game's subject is an information asymmetry, and the wire
+is what makes it a fact rather than a promise, at about a fifth of a second per
+hop.
 
-\section{Where it is abandoned}
+\section{What the type system contributes, and what it cannot}
 
-At the outermost edge the project gives up on it entirely. Everything a human
-or a search program sends to the Plan goes through:
+The handler is the fake; the types are what stop it lying about itself. Three
+mechanisms, and one hard limit.
+
+\subsection*{The container as its graph}
+
+$R$ cannot be a function from values to types, so a container is presented as
+the union of its fibres --- over a \emph{finite} index this is an equality:
+\[
+  \Sigma\,(s : S).\,B\,s \;=\; \bigcup_{s \in S} \{s\} \times B\,s
+\]
 
 \begin{lstlisting}
-export async function ask(prompt: unknown): Promise<Dict>
+interface Fib<S, P> { readonly shape: S; readonly pos: P }
+type PosAt<C extends Cont, S> =
+  C extends Fib<infer S1, infer P> ? (S extends S1 ? P : never) : never;
 \end{lstlisting}
 
-\noindent \texttt{unknown} in, \texttt{Record<string, unknown>} out. Not a
-degraded dependency --- no typing at all.
+\noindent \texttt{Fib} is never constructed; it is taken apart by \texttt{infer}.
+The handler's signature then reads \texttt{run<S extends Shape<C>>(shape: S):
+Promise<PosAt<C, S>>} --- ask for a harvest, be handed a harvest report, uncast.
 
-This is not laziness, and it is worth saying why. An interactive menu is a
-forwarder by construction: it holds a list of options the player might choose,
-it does not know which until a key is pressed, and a list of ten differently
-typed prompts is exactly the union case above. The same is true of the letter
-search, which replays arbitrary sequences. So the container discipline holds
-\emph{inside} the tower, where Gosplan composes and calls its commissariats
-through \texttt{leaf} and the combinators, and stops at the boundary where
-prompts become data chosen at runtime.
+\subsection*{The hard limit, which is not TypeScript's fault}
 
-\note{Which is the honest shape of the result.} Dependent typing survives
-exactly as far as the compiler can follow the control flow, and no further. The
-tower's interior is typed; its front door is not.
+The general definition, as it appears in Agda,
+\[
+  \textbf{record } \mathrm{Container} : \ \mathrm{Shape} : \mathrm{Set},\quad
+  \mathrm{Pos} : \mathrm{Shape} \to \mathrm{Set}
+\]
+requires a function from \emph{values} to \emph{types}. That is a genuine
+dependent function and it is not available in TypeScript --- nor in Haskell,
+where \texttt{data Container = Container \{shape :: Type; pos :: shape -> Type\}}
+is rejected outright: a value-level field cannot be named in a type position.
+The canonical container is the list functor, $\mathrm{Shape} = \mathbb{N}$ and
+$\mathrm{Pos}\,n = \mathrm{Fin}\,n$; writing it needs one constructor per
+natural number in either language.
 
-\section{The rest of the fakery, briefly}
+\textbf{So containers do need dependent types, and neither language has them.}
+What both can do is the \emph{finite} case, by presenting a container as its
+graph --- unions of fibres read by conditional types in TypeScript, a GADT
+indexed by its response type in Haskell. Every container in this project has
+finitely many prompts, which is the assumption the whole encoding rests on and
+the reason it works at all.
 
-\textbf{The container as its graph.} $R$ cannot be a function from values to
-types, so a container is presented as the union of its fibres, one \texttt{Fib}
-per prompt. \texttt{Fib} is never constructed --- it is a type-level record, the
-object language of $\mathrm{Fam}(\mathrm{Set}^{\mathrm{op}})$, taken apart only
-by \texttt{infer}.
+\subsection*{The bill}
 
-\textbf{The delegate leg as a CLI tool.} $u : P \to Q$ is not a function call
-but a spawned process, \texttt{delegate.ts <port> <json> <depth>}, which knows
-nothing of any container: it carries text. Control genuinely leaves the process.
-The file is located by \texttt{new URL("./delegate.ts", import.meta.url)},
-resolved at run time and never checked --- which is how a clean typecheck once
-produced a playthrough that died on its first hop.
+Ten casts, two per combinator, because every \texttt{run} body must destructure
+a shape it knows only through a conditional type and re-assert the result. All
+ten are inside \texttt{lib/algebra.ts}; none is in the game. Haskell's version
+needs none, because pattern matching on a GADT genuinely refines the type
+rather than asserting it.
 
-\textbf{The wire.} JSON has six kinds of value and no notion of types, so a tag
-is a claim rather than a fact, and a wrong one usually does not crash: a missing
-property reads as \texttt{undefined}, so the handler returns HTTP 200 with a
-well-formed reply meaning nothing. Both directions are therefore validated
-rather than cast --- 56 field checks across the five servers, and per-fibre
-decoders on the way back.
-
-\section{The bill}
-
-\begin{center}
-\footnotesize
-\begin{tabular}{@{}lrl@{}}
-\toprule
-site & casts & what is asserted \\
-\midrule
-\texttt{leaf} & 2 & the shape has a \texttt{tag}; the decoded reply is the position \\
-\texttt{sumC} & 2 & the shape is a tagged side; the reply is the position \\
-\texttt{tensorC} & 2 & the shape is a pair; the pair of replies is the position \\
-\texttt{productC} & 2 & the shape is a pair; \texttt{\{side, value\}} is the position \\
-\texttt{seqC} & 2 & the shape is \texttt{\{first, next\}}; \texttt{\{first, second\}} is the position \\
-\midrule
-\textbf{total} & \textbf{10} & all inside \texttt{lib/algebra.ts}, 260 lines \\
-\bottomrule
-\end{tabular}
-\end{center}
-
-\noindent Every \texttt{run} body must destructure a shape it knows only
-through a conditional type and re-assert the result; hence two per combinator.
-\textbf{None is in the game.} The game's own casts are \texttt{as const} on
-literals and narrowing strings a validator has already checked; no call site in
-\texttt{stalin} ever asserts the type of a container position.
-
-\subsection*{Two traps, both silent}
-
-\textbf{The fibre test written backwards.} \texttt{Extract<C, Fib<S, unknown>>}
-keeps the fibres assignable \emph{to} the query, but a shape you hold is usually
-\emph{narrower} than its fibre's declared shape. What is wanted is
-\texttt{S extends S1}. Written the other way, every position becomes
-\texttt{never} and nothing complains near the mistake.
-
-\textbf{Conditional types are not inference sites.} If \texttt{C} occurs only
-inside \texttt{Shape<C>} and \texttt{PosAt<C, S>}, TypeScript cannot infer it:
-\texttt{seqC(a, b)} silently infers \texttt{A = Cont} and every downstream
-position becomes \texttt{unknown}. Hence the phantom \texttt{readonly fibres?: C},
-a field that is never assigned and exists solely to give \texttt{C} an inferable
-position.
+Two silent traps, both costly: the fibre test written \texttt{Extract<C, Fib<S,
+unknown>>} instead of \texttt{S extends S1} makes every position \texttt{never};
+and a type parameter occurring only inside conditional types is not an inference
+site, so \texttt{seqC(a, b)} silently infers \texttt{A = Cont} unless
+\texttt{Runner} carries a phantom \texttt{readonly fibres?: C}.
 
 \section*{Summary}
 
 \begin{center}
 \footnotesize
-\begin{tabular}{@{}p{0.30\textwidth}p{0.62\textwidth}@{}}
+\begin{tabular}{@{}p{0.26\textwidth}p{0.66\textwidth}@{}}
 \toprule
-\textcolor{good}{\textbf{Exact}} & inline prompts, and \texttt{const}s narrowed by their discriminant:
-the position type follows from the prompt, uncast \\
-\textcolor{warn}{\textbf{Degraded}} & any forwarder generic over prompts: the union of all positions,
-sound but no longer dependent \\
-\textcolor{warn}{\textbf{Abandoned}} & the outermost client, \texttt{ask(unknown): Dict} --- because a menu
-is a forwarder by construction \\
-\midrule
-\textbf{Cost} & 10 casts, one phantom field, and a finite index \\
-\textbf{Irrelevant} & \texttt{async}, the wire, and the event loop --- all three are
-about \emph{where the handler lives} and \emph{who waits}, not about the algebra.
-\texttt{local-tower.ts} runs it with none of them \\
+\textbf{The fake} & an \texttt{async} event handler: $(p : P) \to R\,p$ woken by a socket \\
+\textbf{What it buys} & shapes compose \emph{forwards} through $u$ and responses
+  compose \emph{backwards} through $f$, in one straight-line function ---
+  in a program that is listening and calling at the same time \\
+\textbf{Why not callbacks} & control inverts; $f$ must be passed rather than
+  returned, and composites stop being morphisms \\
+\textbf{Why not blocking} & a handler that delegates and blocks stalls the event
+  loop it lives in \\
+\textbf{The hard combinator} & $\lhd$, where a response turns around and becomes
+  the next shape \\
+\textbf{What types add} & the response type follows from the prompt, uncast, at
+  ten casts confined to one library \\
+\textbf{What nothing adds} & the general $\mathrm{Pos} : \mathrm{Shape} \to
+  \mathrm{Set}$. Finite containers only --- in TypeScript and in Haskell alike \\
 \bottomrule
 \end{tabular}
 \end{center}
