@@ -444,40 +444,57 @@ starts, is prompted once, answers, and exits. It is nonetheless event-driven in 
 matters, because what makes a program event-driven is the prompt-indexed response type and not
 the waiting. Strip the loop away and this is what remains.
 
-\section{The Claude Code harness: kernel, shell, and permissions}
+\section{The Claude Code harness}
 
-\subsection*{What the harness is}
+Claude Code is a CLI process. When it runs a command it does what the shell does: it
+\texttt{fork}s, and the copy \texttt{exec}s, and the copy inherits its parent's identity.
 
-Claude Code is a CLI process. When it runs a command it does what a shell does: it forks,
-it execs, and the child inherits the parent's identity. There is no sandbox in that
-sentence and no daemon and no privileged helper. \textbf{Claude Code can execute any
-command-line tool with the permissions of the user who launched it} --- on this machine,
-\texttt{robin}. Every command in this note ran as \texttt{robin}, the servers included.
+That's it. It runs with the permissions of the user that executed it. It can read and write any
+file that user can read and write, and it can execute any command that user can execute. On
+this machine that user is \texttt{robin}, and every command in this note ran as \texttt{robin}.
 
-That is worth stating baldly because it is the security model, and it is a model people
-routinely mis-describe. An agent deleting your home directory is not privilege escalation.
-It is your own privilege, used badly, by a process you started. Unix gives every process
-\emph{ambient authority}: authority attaches to the identity of the running user, not to
-the particular task, so a process may do anything its user may do merely by virtue of
-existing. There is no way, at the kernel level, to say ``this program may read \emph{these}
-files'' --- only ``this user may read these files''.
+In production one would therefore create a user with limited permissions and run the Claude
+Code executable as that user. Which user runs it is the only lever there is, so that is where
+you pull it.
 
 \section{HTTP and JSON}
 
-Again, in case the reader is a little rusty, we review some concepts from web app
-development: what HTTP
-is and why so little of it turned out to be the right amount, what a status code is for, which
-part of a request carries what, and what JSON does and does not preserve. This time the review
-and the explanation are interleaved, because from here on the concepts are put to work on the
-code as they arrive.
+Again, in case the reader is a little rusty, we review some concepts from web app development:
+what a request and a response are, why so little of HTTP turned out to be the right amount,
+what a status code is for, which part of a request carries what, and what JSON does and does
+not preserve. As in the first section, none of it is specific to the game \texttt{stalin}, and
+all of it is used by it.
+
+The examples below all run against a toy server that holds a list of books. It has nothing to
+do with the game; it exists so that each point can be made on its own.
+
+\subsection*{A request and a response}
+
+HTTP is a request/response protocol. A client sends a request; a server sends a response;
+nothing else happens. Here is one complete exchange, with \texttt{curl} showing both halves ---
+the lines it sent marked \texttt{>} and the lines it received marked \texttt{<}:
+
+\begin{lstlisting}[language=SH]
+> GET /books/1 HTTP/1.1
+> Host: 127.0.0.1:8099
+> Accept: */*
+>
+< HTTP/1.1 200 OK
+< Content-Type: application/json
+< Content-Length: 63
+<
+{"id": 1, "title": "Dead Souls", "year": 1842, "inPrint": true}
+\end{lstlisting}
+
+That is the whole protocol in one screen. A request is a \emph{method} (\texttt{GET}), a
+\emph{path} (\texttt{/books/1}), some \emph{headers}, and optionally a \emph{body}. A response
+is a three-digit \emph{status} (\texttt{200}), some headers, and a body. Every web interaction
+is a variation on this, and one page load is many such exchanges.
 
 \subsection*{A design that looked far too weak}
 
-HTTP is a request/response protocol: a client sends a request, a server sends a response, and
-nothing else happens. A request is a method, a path, some headers and optionally a body; a response is
-a three-digit status, some headers and a body. It is worth a paragraph on where so little came
-from, because HTTP made the same kind of bet Unix made, and it looked just as inadequate at
-the time.
+It is worth a paragraph on where so little came from, because HTTP made the same kind of bet
+Unix made, and it looked just as inadequate at the time.
 
 Tim Berners-Lee's first version, at CERN in 1991, had one method. You opened a connection,
 sent a single line --- \texttt{GET /thepage} --- and read the document that came back. There
@@ -507,14 +524,377 @@ The best evidence is what has happened since. The encoding on the wire has been 
 --- a binary framing in 2015, and a different transport underneath it in 2022 --- and both
 times the semantics were left exactly as they were: a method, a path, some headers, a body, and
 a three-digit status. Two complete rewrites of how the bytes travel, and nothing above had to
-be rethought. That is what a correct interface looks like in retrospect.
+be rethought.
 
-The parallel with the previous section is close enough to be worth naming. A pipe carries bytes
+The parallel with the first section is close enough to be worth naming. A pipe carries bytes
 and does not know what they mean; an HTTP response carries bytes and a string saying what they
 are. In both cases the interface is universal precisely because it is weak, in both cases
 nothing verifies that an exchange means anything, and in both cases what was rebuilt on top of
-the weakness --- sessions, from cookies onwards --- had to be rebuilt without any help from the
-protocol at all.
+the weakness had to be rebuilt without any help from the protocol at all.
+
+\subsection*{The method says what kind of thing you are doing}
+
+The method is the verb. There are a handful in common use and only the first two appear below.
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Method} & \textbf{Means} \\
+\midrule
+\texttt{GET}    & read something; change nothing \\
+\texttt{POST}   & create something \\
+\texttt{PUT}    & replace something entirely \\
+\texttt{PATCH}  & change part of something \\
+\texttt{DELETE} & remove something \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The distinction that matters is the first one. A \texttt{GET} is meant to have no effect, which
+is why anything in the network is free to cache it or repeat it. Asking the toy server for a
+book and asking it to add one differ in the verb, and the two answers differ accordingly:
+
+\begin{lstlisting}[language=SH]
+$ curl -X GET  http://127.0.0.1:8099/books/1     -- 200 OK
+$ curl -X POST http://127.0.0.1:8099/books \
+       -H 'Content-Type: application/json' \
+       -d '{"title":"The Overcoat","year":1842}'  -- 201 Created
+\end{lstlisting}
+
+\subsection*{The status code says what happened}
+
+The three-digit number is the server's answer to ``how did that go''. The first digit is the
+class, and the class is the part worth knowing.
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Class} & \textbf{Means} & \textbf{Whose fault} \\
+\midrule
+\texttt{2xx} & it worked                        & --- \\
+\texttt{3xx} & look somewhere else              & --- \\
+\texttt{4xx} & your request was wrong           & the client's \\
+\texttt{5xx} & my handling of it went wrong     & the server's \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The \texttt{4xx}/\texttt{5xx} split is the whole value of the vocabulary. It lets a caller tell
+``I asked for something impossible'' from ``the far end is broken'', and those call for
+completely different responses: fix the request, or try again later. Four requests to the toy
+server, and four different answers:
+
+\begin{lstlisting}[language=SH]
+200  asked for a book that exists
+404  asked for a book that does not
+400  sent a body that is not JSON
+400  sent JSON with no title
+\end{lstlisting}
+
+Note that the last two are both \texttt{400}. \texttt{404} and \texttt{400} are both the
+client's fault, and the code alone does not say which detail was wrong --- so a useful server
+puts that in the body:
+
+\begin{lstlisting}[language=SH]
+$ curl -X POST -d 'not json'      http://127.0.0.1:8099/books
+{"error": "body is not JSON"}
+$ curl -X POST -d '{"year":1842}' http://127.0.0.1:8099/books
+{"error": "title is required"}
+\end{lstlisting}
+
+\subsection*{Headers describe the message}
+
+Headers are name/value lines carrying facts about the message rather than the thing being
+asked for. Two appear in the exchange above.
+
+\texttt{Content-Type} says what the body is: \texttt{application/json} here,
+\texttt{text/html} for a web page. It is a string, and it is a claim --- nothing checks that a
+body labelled JSON is JSON. \texttt{Content-Length} says how many bytes the body has, so the
+reader knows where the message ends without waiting for the connection to close.
+
+The useful discipline is the one the names suggest: a header is for what is true of the
+\emph{message}, and the body is for the thing itself. Anything that is neither belongs in
+neither.
+
+\subsection*{Where data can travel}
+
+There are four places a piece of information can ride in a request, and they are not
+interchangeable.
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Place} & \textbf{Example} \\
+\midrule
+the path         & \texttt{/books/1} --- which thing \\
+the query string & \texttt{/books?year=1842} --- how to filter or sort it \\
+a header         & \texttt{Content-Type: application/json} --- about the message \\
+the body         & the JSON document itself \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The one rule worth stating outright: never put a secret in a path or a query string. Both are
+part of the URL, and URLs are written to server logs, kept in browser history, and passed along
+in referrer headers. A password in a query string will end up in a log file that nobody thought
+of as sensitive.
+
+\subsection*{Statelessness}
+
+Each request stands alone. The server does not inherently remember that you asked something a
+moment ago, and two identical requests get identical answers.
+
+Everything that appears to contradict this is built on top. When a site remembers you are
+logged in, what happens is that the server sent a \texttt{Set-Cookie} header once and the
+browser now attaches \texttt{Cookie: session=abc123} to every subsequent request. The server
+looks that value up and says, in effect, ``ah, user 42 again''. Being logged in is not a state
+the protocol knows about; it is a string being re-sent, every single time, by a client that
+could just as easily send a different one. That last point is why a server must treat what
+arrives as a claim rather than a fact.
+
+\subsection*{JSON}
+
+JSON --- JavaScript Object Notation --- is a text format for data. It has six types and no
+others: objects, arrays, strings, numbers, booleans, and \texttt{null}.
+
+\begin{lstlisting}[language=TS]
+{
+  "title":   "Dead Souls",       // a string
+  "year":    1842,               // a number
+  "inPrint": true,               // a boolean
+  "tags":    ["russian"],        // an array
+  "author":  { "name": "Gogol" },// an object
+  "sequel":  null                // null
+}
+\end{lstlisting}
+
+Being text is what makes it useful here: it is exactly what a pipe can carry and what a socket
+can send, so it crosses every boundary in this note unchanged.
+
+\subsection*{What JSON does not carry}
+
+The omissions matter more than the six types, because each one is something that silently fails
+to survive the crossing.
+
+\textbf{No functions, and no ``absent''.} Serialise an object with a function in it, or a field
+explicitly set to \texttt{undefined}, and they are simply not there afterwards. No error is
+raised:
+
+\begin{lstlisting}[language=TS]
+const o = { title: "Dead Souls", year: 1842, tags: ["russian"],
+            reissue: undefined, describe: () => "a book" };
+JSON.stringify(o)
+// {"title":"Dead Souls","year":1842,"tags":["russian"]}
+\end{lstlisting}
+
+\textbf{One number type.} Every number is an IEEE 754 double. That is fine for a year and not
+fine for money or for identifiers:
+
+\begin{lstlisting}[language=TS]
+JSON.stringify({ n: 0.1 + 0.2 })          // {"n":0.30000000000000004}
+JSON.stringify({ big: 9007199254740993 }) // {"big":9007199254740992}
+\end{lstlisting}
+
+The second is not a rounding display: the value changed. Past $2^{53}$ the integers are no
+longer all representable.
+
+\textbf{No sum types, so a constructor becomes a convention.} There is no notation for ``this
+is one of the following kinds of thing''. What people do instead is agree on a field:
+
+\begin{lstlisting}[language=TS]
+JSON.parse('{"tag":"Book","title":"Dead Souls"}').tag
+// "Book"  -- a string, exactly like any other string
+\end{lstlisting}
+
+Nothing distinguishes that from a title that happens to read \texttt{"Book"}, and nothing
+requires the other fields a \texttt{Book} is supposed to have to be present.
+
+\textbf{No schema at all.} There is no place in the format to say what the fields should be.
+Both ends may agree, but the agreement lives in prose and in code, exactly as in the first
+section.
+
+Hence the shape of every crossing, in both directions. What arrives is a text document of
+unknown structure, and if anything is to be relied upon, something has to look. That is the
+subject of the next section.
+
+\section{TypeScript, event handlers, and servers}
+
+\subsection*{What TypeScript is, exactly}
+
+TypeScript is a structural type system over JavaScript that is \emph{erased}. Types are
+checked at compile time and then deleted; the emitted program has no representation of them
+and no run-time check derived from them. There is no reflection to fall back on. A cast is
+therefore not a coercion --- it is an unchecked assertion, a promise to the compiler that
+the compiler does not verify and the runtime cannot.
+
+That single fact determines the shape of every boundary in this codebase. On the inside,
+the checker is strong enough to do real work. A conditional type over a finite union
+\emph{computes} which decisions exist in each case --- here, which export decisions the
+harvest permits:
+
+\begin{lstlisting}[language=TS]
+type ExportChoice<G extends HarvestGrade> =
+  G extends "failure"  ? "none"
+: G extends "poor"     ? "none" | "surplus"
+: G extends "adequate" ? "none" | "surplus" | "full"
+:                        "none" | "surplus" | "full" | "maximum";
+
+exportPlan("bumper",  "maximum")   // fine
+exportPlan("failure", "maximum")   // does not compile
+\end{lstlisting}
+
+Exporting grain during a failed harvest is not a move the engine rejects. It is a move that
+cannot be written down. On the outside, at the wire, the checker contributes exactly nothing, because everything arriving is \texttt{unknown} and the
+checker went home before the process started.
+
+\subsection*{Servers: the runtime owns the loop}
+
+\texttt{Deno.serve} takes a handler and supplies everything else --- the socket, the accept
+loop, the parsing, the concurrency:
+
+\begin{lstlisting}[language=TS]
+Deno.serve({ port: opts.port }, async (req) => { ... return response; });
+\end{lstlisting}
+
+You write $(\text{Request}) \to \text{Promise}\langle\text{Response}\rangle$ and the
+runtime calls it once per request. This is what ``event handler'' means operationally:
+inversion of control, with the loop on the far side of the library boundary.
+
+But --- and this is the \S1 point returning --- the loop is not what makes it event-driven
+in the sense that matters. The CLI in \texttt{stalin.ts} has no loop at all and is
+event-driven in the same sense. What both have is a response type indexed by the prompt.
+The loop is scheduling; the indexing is the type.
+
+\subsection*{The handler table is the dependent function}
+
+Here is the pattern used in all five commissariats, from \texttt{transport.server.ts}. The
+prompt type is a tagged union --- a finite shape type:
+
+\begin{lstlisting}[language=TS]
+export type TrPrompt =
+  | { tag: "Lay";    workers: People; steel: Steel; year: number }
+  | { tag: "Haul";   railCapacity: number; available: Grain;
+                     needIndustry: Grain; offerPort: Grain; year: number }
+  | { tag: "Report"; year: number }
+  | { tag: "Census" }
+  | { tag: "Reset";  seed: number };
+
+export interface TrResponses {
+  Lay: RailReport;  Haul: HaulReport;  Report: Dispatch;
+  Census: CensusReturn;  Reset: ResetAck;
+}
+type Reply<K extends TrPrompt["tag"]> = TrResponses[K];
+\end{lstlisting}
+
+\texttt{TrResponses} \emph{is} $R : P \to \mathrm{Type}$, written as a record because the
+index is finite. And then the program $(p : P) \to R\,p$ is a record too:
+
+\begin{lstlisting}[language=TS]
+type Handlers = { [K in TrPrompt["tag"]]: (p: Extract<TrPrompt, { tag: K }>) => Reply<K> };
+
+const handlers: Handlers = {
+  Lay:  (p) => { ... return { added, steelUsed }; },
+  Haul: (p) => { ... return { toIndustry, toPort, stranded, short }; },
+  ...
+};
+\end{lstlisting}
+
+Three properties are worth pausing on, because this is the idiom to internalise:
+
+\begin{enumerate}
+\item \textbf{Each branch is checked against its own fibre.} Inside \texttt{Haul}, \texttt{p}
+      is the \texttt{Haul} member and the return type is \texttt{HaulReport}. Not a union,
+      not a widened supertype --- the one type indexed by that tag.
+\item \textbf{Totality is structural.} Add a member to \texttt{TrPrompt} and the object
+      literal stops satisfying \texttt{Handlers}. There is no default case to fall through
+      and no runtime dispatch to forget. Exhaustiveness is a property of the mapped type,
+      not of anyone's diligence.
+\item \textbf{Ordinary code, dependent shape.} No dependent types were harmed. This works
+      because the index is a finite union of string literals, over which conditional and
+      mapped types distribute --- the same observation that makes \texttt{lib/algebra.ts}
+      possible, where a container is presented as its graph, $\Sigma(s{:}S).\,B\,s$ as the
+      union of its fibres. What it costs is a \texttt{next} that branches between
+      \emph{different} second shapes: such a function has a union return type, lies in no
+      single fibre, and cannot be written in this encoding at all.
+\end{enumerate}
+
+\subsection*{The one cast, and why it is there}
+
+Applying the table needs a cast, and the codebase confines it to three lines:
+
+\begin{lstlisting}[language=TS]
+function answer<P extends TrPrompt>(p: P): Reply<P["tag"]> {
+  const h = handlers[p.tag] as (q: TrPrompt) => Reply<P["tag"]>;
+  return h(p);
+}
+\end{lstlisting}
+
+This is the well-known correlated-union limitation: TypeScript will not see that
+\texttt{handlers[p.tag]} and \texttt{p} are correlated through the same tag, so it types the
+lookup as a union of functions and the argument as a union of parameters, and refuses the
+application. The cast asserts the correlation that the mapped type already established one
+declaration earlier. It is unchecked, and it is safe for a reason you can state: every
+entry of \texttt{handlers} was individually checked at its own fibre when the literal was
+written. Note the discipline --- one cast, at a place where the invariant is provable, not
+scattered through the handlers.
+
+\subsection*{The seam: validate, do not cast}
+
+Now the boundary, which is the most important twenty lines in the repository. Types die at
+the wire. Something must witness them back into existence, and the only honest witness is
+code that looks at the fields.
+
+\begin{lstlisting}[language=TS]
+export function parseTr(u: unknown): TrPrompt | null {
+  if (!isRecord(u) || !isStr(u.tag)) return null;
+  switch (u.tag) {
+    case "Haul":
+      return isNum(u.railCapacity) && isNum(u.available) && isNum(u.needIndustry) &&
+             isNum(u.offerPort) && isNum(u.year)
+        ? { tag: "Haul", railCapacity: u.railCapacity, available: u.available,
+            needIndustry: u.needIndustry, offerPort: u.offerPort, year: u.year }
+        : null;
+    ...
+    default: return null;
+  }
+}
+\end{lstlisting}
+
+Four things are being done deliberately here.
+
+\textbf{The signature is the whole design.} \texttt{unknown → TrPrompt | null}. Not
+\texttt{any}, which would let the ill-typed value spread silently; \texttt{unknown}, which
+the compiler will not let you touch until you have narrowed it.
+
+\textbf{Refusal is a value, not an exception.} \texttt{null} means ``this was not a
+prompt''. The caller in \texttt{serveContainer} turns it into a 400 --- the request was
+wrong, rather than the server broken. An exception
+would have conflated it with the 500, which is the distinction the status codes exist to
+draw.
+
+\textbf{The tag is checked, not trusted.} \texttt{u.tag === "Haul"} says the sender claims
+this is a \texttt{Haul}. The five \texttt{isNum} calls are what make it one. Everything
+arriving from outside is a claim rather than a fact, and that holds for
+your own five servers on localhost too, because the property you want is not ``my callers are
+honest'' but ``an ill-typed value cannot get past this line''.
+
+\textbf{The object is rebuilt, not passed through.} The returned literal names every field
+explicitly. Nothing extra rides along, and the returned value is a \texttt{TrPrompt} because
+it was \emph{constructed} as one, not because anyone asserted it.
+
+Replies coming back are validated the same way, by per-tag decoders in
+\texttt{lib/algebra.ts}:
+
+\begin{lstlisting}[language=TS]
+export type Decoders<C extends Cont> = {
+  [K in TagOf<Shape<C>>]: (u: unknown) => PosAt<C, Extract<Shape<C>, { tag: K }>> | null;
+};
+\end{lstlisting}
+
+Same mapped-type idiom, pointed the other way: one decoder per shape, each checked against
+that shape's own position type. A leaf runs by delegating and then decoding, and throws if
+the reply does not validate. So both legs of every hop have a witness, and there is no
+direction in which an unchecked value enters the typed world.
 
 \subsection*{Why HTTP at all}
 
@@ -677,30 +1057,16 @@ Indentation is the depth counter; \texttt{↓} is control flowing down and \text
 flowing back up. You are reading the derivation tree of a container morphism, printed by a
 program that had no idea it was doing that.
 
-\subsection*{JSON, and what it throws away}
+\subsection*{The one thing JSON cannot carry that the algebra needs}
 
-JSON has six types: objects, arrays, strings, numbers, booleans, null. That is the whole
-grammar, and the omissions are what matter at a typed boundary.
+Of everything JSON leaves out, one omission bites structurally here rather than merely
+requiring care. A function cannot be serialised --- and the shape of $\lhd$ is a dependent pair
+whose second component is exactly that, a function \texttt{(r: PA) => SB}.
 
-\begin{itemize}
-\item \textbf{No sum types.} A constructor becomes a string field by convention. The
-      \texttt{"tag"} in every prompt is that convention, and it is \emph{a claim, not a
-      fact}: nothing in the wire format prevents \texttt{\{"tag":"Haul"\}} with no other
-      field, which is exactly the 400 above.
-\item \textbf{No functions.} This one bites structurally. The shape of $\lhd$ is a
-      dependent pair whose second component is a function
-      \texttt{(r: PA) => SB} --- and a function cannot be serialised. So sequential
-      composition is necessarily resolved \emph{above} the wire, in the runner, which
-      prompts the first container and applies \texttt{next} to the reply to obtain the
-      second prompt. Only the two ground prompts ever cross. The wire format is not neutral
-      about which combinators can be distributed.
-\item \textbf{One number type,} IEEE 754 double. Grain and steel are tonnages, so this is
-      fine here, and it would not be fine for money.
-\item \textbf{No distinction between absent and null,} and no schema of any kind.
-\end{itemize}
-
-Hence the shape of every crossing, in both directions: \texttt{unknown} in, and a witness
-required before anything else may happen. Which is \S4.
+So sequential composition cannot be distributed over the wire. It is resolved \emph{above} it,
+in the runner, which prompts the first container and applies \texttt{next} to the reply to
+obtain the second prompt; only the two ground prompts ever cross. The wire format is not
+neutral about which combinators can be sent and which have to be interpreted locally.
 
 \subsection*{Statelessness, and where this repository is not stateless}
 
@@ -730,184 +1096,6 @@ books carry over into the next game --- a bug the comment records as having actu
 happened. Determinism on the seed is what makes a playthrough a regression test, so this is
 load-bearing. The general lesson: when process state substitutes for protocol state, the
 lifecycle leaks into the interface.
-
-\section{TypeScript, event handlers, and servers}
-
-\subsection*{What TypeScript is, exactly}
-
-TypeScript is a structural type system over JavaScript that is \emph{erased}. Types are
-checked at compile time and then deleted; the emitted program has no representation of them
-and no run-time check derived from them. There is no reflection to fall back on. A cast is
-therefore not a coercion --- it is an unchecked assertion, a promise to the compiler that
-the compiler does not verify and the runtime cannot.
-
-That single fact determines the shape of every boundary in this codebase. On the inside,
-the checker is strong enough to do real work. A conditional type over a finite union
-\emph{computes} which decisions exist in each case --- here, which export decisions the
-harvest permits:
-
-\begin{lstlisting}[language=TS]
-type ExportChoice<G extends HarvestGrade> =
-  G extends "failure"  ? "none"
-: G extends "poor"     ? "none" | "surplus"
-: G extends "adequate" ? "none" | "surplus" | "full"
-:                        "none" | "surplus" | "full" | "maximum";
-
-exportPlan("bumper",  "maximum")   // fine
-exportPlan("failure", "maximum")   // does not compile
-\end{lstlisting}
-
-Exporting grain during a failed harvest is not a move the engine rejects. It is a move that
-cannot be written down. On the outside, at the wire, the checker contributes exactly nothing, because everything arriving is \texttt{unknown} and the
-checker went home before the process started.
-
-\subsection*{Servers: the runtime owns the loop}
-
-\texttt{Deno.serve} takes a handler and supplies everything else --- the socket, the accept
-loop, the parsing, the concurrency:
-
-\begin{lstlisting}[language=TS]
-Deno.serve({ port: opts.port }, async (req) => { ... return response; });
-\end{lstlisting}
-
-You write $(\text{Request}) \to \text{Promise}\langle\text{Response}\rangle$ and the
-runtime calls it once per request. This is what ``event handler'' means operationally:
-inversion of control, with the loop on the far side of the library boundary.
-
-But --- and this is the \S1 point returning --- the loop is not what makes it event-driven
-in the sense that matters. The CLI in \texttt{stalin.ts} has no loop at all and is
-event-driven in the same sense. What both have is a response type indexed by the prompt.
-The loop is scheduling; the indexing is the type.
-
-\subsection*{The handler table is the dependent function}
-
-Here is the pattern used in all five commissariats, from \texttt{transport.server.ts}. The
-prompt type is a tagged union --- a finite shape type:
-
-\begin{lstlisting}[language=TS]
-export type TrPrompt =
-  | { tag: "Lay";    workers: People; steel: Steel; year: number }
-  | { tag: "Haul";   railCapacity: number; available: Grain;
-                     needIndustry: Grain; offerPort: Grain; year: number }
-  | { tag: "Report"; year: number }
-  | { tag: "Census" }
-  | { tag: "Reset";  seed: number };
-
-export interface TrResponses {
-  Lay: RailReport;  Haul: HaulReport;  Report: Dispatch;
-  Census: CensusReturn;  Reset: ResetAck;
-}
-type Reply<K extends TrPrompt["tag"]> = TrResponses[K];
-\end{lstlisting}
-
-\texttt{TrResponses} \emph{is} $R : P \to \mathrm{Type}$, written as a record because the
-index is finite. And then the program $(p : P) \to R\,p$ is a record too:
-
-\begin{lstlisting}[language=TS]
-type Handlers = { [K in TrPrompt["tag"]]: (p: Extract<TrPrompt, { tag: K }>) => Reply<K> };
-
-const handlers: Handlers = {
-  Lay:  (p) => { ... return { added, steelUsed }; },
-  Haul: (p) => { ... return { toIndustry, toPort, stranded, short }; },
-  ...
-};
-\end{lstlisting}
-
-Three properties are worth pausing on, because this is the idiom to internalise:
-
-\begin{enumerate}
-\item \textbf{Each branch is checked against its own fibre.} Inside \texttt{Haul}, \texttt{p}
-      is the \texttt{Haul} member and the return type is \texttt{HaulReport}. Not a union,
-      not a widened supertype --- the one type indexed by that tag.
-\item \textbf{Totality is structural.} Add a member to \texttt{TrPrompt} and the object
-      literal stops satisfying \texttt{Handlers}. There is no default case to fall through
-      and no runtime dispatch to forget. Exhaustiveness is a property of the mapped type,
-      not of anyone's diligence.
-\item \textbf{Ordinary code, dependent shape.} No dependent types were harmed. This works
-      because the index is a finite union of string literals, over which conditional and
-      mapped types distribute --- the same observation that makes \texttt{lib/algebra.ts}
-      possible, where a container is presented as its graph, $\Sigma(s{:}S).\,B\,s$ as the
-      union of its fibres. What it costs is a \texttt{next} that branches between
-      \emph{different} second shapes: such a function has a union return type, lies in no
-      single fibre, and cannot be written in this encoding at all.
-\end{enumerate}
-
-\subsection*{The one cast, and why it is there}
-
-Applying the table needs a cast, and the codebase confines it to three lines:
-
-\begin{lstlisting}[language=TS]
-function answer<P extends TrPrompt>(p: P): Reply<P["tag"]> {
-  const h = handlers[p.tag] as (q: TrPrompt) => Reply<P["tag"]>;
-  return h(p);
-}
-\end{lstlisting}
-
-This is the well-known correlated-union limitation: TypeScript will not see that
-\texttt{handlers[p.tag]} and \texttt{p} are correlated through the same tag, so it types the
-lookup as a union of functions and the argument as a union of parameters, and refuses the
-application. The cast asserts the correlation that the mapped type already established one
-declaration earlier. It is unchecked, and it is safe for a reason you can state: every
-entry of \texttt{handlers} was individually checked at its own fibre when the literal was
-written. Note the discipline --- one cast, at a place where the invariant is provable, not
-scattered through the handlers.
-
-\subsection*{The seam: validate, do not cast}
-
-Now the boundary, which is the most important twenty lines in the repository. Types die at
-the wire. Something must witness them back into existence, and the only honest witness is
-code that looks at the fields.
-
-\begin{lstlisting}[language=TS]
-export function parseTr(u: unknown): TrPrompt | null {
-  if (!isRecord(u) || !isStr(u.tag)) return null;
-  switch (u.tag) {
-    case "Haul":
-      return isNum(u.railCapacity) && isNum(u.available) && isNum(u.needIndustry) &&
-             isNum(u.offerPort) && isNum(u.year)
-        ? { tag: "Haul", railCapacity: u.railCapacity, available: u.available,
-            needIndustry: u.needIndustry, offerPort: u.offerPort, year: u.year }
-        : null;
-    ...
-    default: return null;
-  }
-}
-\end{lstlisting}
-
-Four things are being done deliberately here.
-
-\textbf{The signature is the whole design.} \texttt{unknown → TrPrompt | null}. Not
-\texttt{any}, which would let the ill-typed value spread silently; \texttt{unknown}, which
-the compiler will not let you touch until you have narrowed it.
-
-\textbf{Refusal is a value, not an exception.} \texttt{null} means ``this was not a
-prompt''. The caller in \texttt{serveContainer} turns it into the 400 of \S3. An exception
-would have conflated it with the 500, which is the distinction the status codes exist to
-draw.
-
-\textbf{The tag is checked, not trusted.} \texttt{u.tag === "Haul"} says the sender claims
-this is a \texttt{Haul}. The five \texttt{isNum} calls are what make it one. Everything
-arriving from outside is a claim rather than a fact, and that holds for
-your own five servers on localhost too, because the property you want is not ``my callers are
-honest'' but ``an ill-typed value cannot get past this line''.
-
-\textbf{The object is rebuilt, not passed through.} The returned literal names every field
-explicitly. Nothing extra rides along, and the returned value is a \texttt{TrPrompt} because
-it was \emph{constructed} as one, not because anyone asserted it.
-
-Replies coming back are validated the same way, by per-tag decoders in
-\texttt{lib/algebra.ts}:
-
-\begin{lstlisting}[language=TS]
-export type Decoders<C extends Cont> = {
-  [K in TagOf<Shape<C>>]: (u: unknown) => PosAt<C, Extract<Shape<C>, { tag: K }>> | null;
-};
-\end{lstlisting}
-
-Same mapped-type idiom, pointed the other way: one decoder per shape, each checked against
-that shape's own position type. A leaf runs by delegating and then decoding, and throws if
-the reply does not validate. So both legs of every hop have a witness, and there is no
-direction in which an unchecked value enters the typed world.
 
 \subsection*{Three roles in one process}
 
@@ -952,11 +1140,12 @@ engineering is all in the handover, and there are two places in this repository 
 happens.
 
 \begin{itemize}
-\item \texttt{lib/delegate.ts} is the handover from \S1 to \S3. A pipeline's untyped byte
+\item \texttt{lib/delegate.ts} is the handover from the Unix side to the HTTP side. A pipeline's untyped byte
       stream becomes an HTTP request, and the discipline that makes it work is entirely
       Unix's: one job, stdout is the reply and nothing else, stderr for narration, two
       distinct exit codes for two distinct kinds of failure.
-\item \texttt{parse} is the handover from \S3 to \S4, and it is the important one.
+\item \texttt{parse} is the handover from the wire to the type system, and it is the
+      important one.
       \texttt{unknown → TrPrompt | null}: refusal is a value, the tag is checked rather
       than trusted, and the prompt is rebuilt field by field rather than asserted. Nothing
       ill-typed exists downstream of that line, and it is the only reason the mapped-type
