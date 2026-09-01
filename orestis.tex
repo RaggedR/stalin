@@ -490,29 +490,23 @@ do with the game; it exists so that each point can be made on its own.
 \subsection*{A request and a response}
 
 HTTP is a request/response protocol. A client sends a request; a server sends a response;
-nothing else happens. Here is one complete exchange, with \texttt{curl} showing both halves ---
-the lines it sent marked \texttt{>} and the lines it received marked \texttt{<}:
+nothing else happens. Here is one complete exchange, the request and the response:
 
 \begin{center}
 \colorbox{codebg}{\begin{minipage}{0.95\linewidth}\ttfamily\small
 \setlength{\fboxsep}{1.5pt}\vspace{1mm}
 \mbox{> GET /books/1 HTTP/1.1}\\
-\colorbox{hdrbg}{\mbox{> Host: 127.0.0.1:8099}}\\
-\colorbox{hdrbg}{\mbox{> Accept: */*}}\\
-\mbox{>}\\
+\hspace*{1em}\colorbox{hdrbg}{\mbox{Host: 127.0.0.1:8099}}\\
+\hspace*{1em}\colorbox{hdrbg}{\mbox{Accept: */*}}\\
+\mbox{}\\
 \mbox{< HTTP/1.1 200 OK}\\
-\colorbox{hdrbg}{\mbox{< Content-Type: application/json}}\\
-\colorbox{hdrbg}{\mbox{< Content-Length: 61}}\\
-\mbox{<}\\
-\colorbox{bdybg}{\mbox{\{"id": 1, "title": "Diaspora", "year": 1997, "inPrint": true\}}}
+\hspace*{1em}\colorbox{hdrbg}{\mbox{Content-Type: application/json}}\\
+\hspace*{1em}\colorbox{hdrbg}{\mbox{Content-Length: 61}}\\
+\mbox{}\\
+\hspace*{1em}\colorbox{bdybg}{\mbox{\{"id": 1, "title": "Diaspora", "year": 1997, "inPrint": true\}}}
 \vspace{1mm}
 \end{minipage}}
 \end{center}
-
-That is the whole protocol in one screen. A request is a \emph{method} (\texttt{GET}), a
-\emph{path} (\texttt{/books/1}), some \emph{headers}, and optionally a \emph{body}. A response
-is a three-digit \emph{status} (\texttt{200}), some headers, and a body. Every web interaction
-is a variation on this, and one page load is many such exchanges.
 
 \subsection*{A design that looked far too weak}
 
