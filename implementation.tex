@@ -153,8 +153,11 @@ const produce       = tensorC(fieldsAndMill, transport);
 
 \noindent Shapes multiply and \emph{positions multiply}: a shape of
 \verb|produce| carries a prompt for each sector, and its position carries a
-report from each. The \verb|Promise.all| inside \verb|tensorC| is not an
-optimisation, it is the definition.
+report from each. The \verb|Promise.all| inside \verb|tensorC| is concurrency
+and only concurrency: what defines the tensor is that both shapes are supplied
+\emph{up front} and both replies are owed, and that independence is enforced by
+the shape type, not by the scheduler. A synchronous tensor firing its two hops
+one after the other is the same combinator, and slower.
 
 \subsection{Sequential composition $\lhd$ --- the haul}
 

@@ -122,8 +122,39 @@ const second  = await b.run(s.next(first), d);                            //  <|
 \end{lstlisting}
 
 \noindent Synchronously these would be two calls in a row either way, and the
-difference would live entirely in the types. That is why the source says the
-\texttt{Promise.all} ``is not an optimisation here; it is the definition''.
+difference would live entirely in the types.
+
+\note{A correction.} The source comment on that \texttt{Promise.all} says it
+``is not an optimisation here; it is the definition''. That is an overstatement,
+and writing a synchronous tower disproves it. The tensor is defined by both
+shapes being supplied \emph{up front} and both replies being owed --- and that
+independence is enforced by the shape type $\{\texttt{left}: S_A,\ \texttt{right}:
+S_B\}$, not by concurrency. You cannot make the right prompt depend on the left
+reply, because you had to construct it before calling \texttt{run}.
+\texttt{Promise.all} adds parallelism, not meaning.
+
+\subsection*{So it could have been synchronous --- and here it is}
+
+\texttt{sync-tower.ts} is the same construction with no \texttt{async},
+\texttt{await} or \texttt{Promise} anywhere in the algebra. A hop blocks:
+
+\begin{lstlisting}
+new Deno.Command("deno", {args: [...delegate...], stdout: "piped"}).outputSync()
+\end{lstlisting}
+
+\noindent It runs a tensor over two live commissariats and returns typed,
+uncast positions. This inverts how the architecture looks. Deno has no
+synchronous \texttt{fetch} and no synchronous HTTP client at all, so an
+\emph{in-process} tower would have had no choice but to be async. It is
+precisely because a hop is a spawned CLI tool that the algebra can block: the
+child does the asynchronous fetch inside its own event loop, and the parent
+simply waits. The decision that looks more distributed is the one that made
+synchrony available.
+
+What cannot be synchronous is the \emph{listening} side --- \texttt{Deno.serve}
+handlers are async and there is no blocking HTTP server. But that is outside
+the algebra, and the line falls exactly where \S3 says it should:
+\textbf{the container algebra can be synchronous; the event loop cannot.}
 
 \section{Where the dependency is exact}
 

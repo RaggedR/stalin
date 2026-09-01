@@ -185,7 +185,12 @@ export function tensorC<A extends Cont, B extends Cont>(
     async run<S extends Shape<TensorC<A, B>>>(shape: S, depth: number) {
       const s = shape as { left: Shape<A>; right: Shape<B> };
       // Both sides are prompted and BOTH replies are owed. The Promise.all is
-      // not an optimisation here; it is the definition.
+      // concurrency, and ONLY concurrency — an earlier comment here called it
+      // "the definition", which is an overstatement a synchronous version of
+      // this file disproves. What defines the tensor is that both shapes are
+      // supplied UP FRONT and both replies are owed, and that independence is
+      // enforced by the shape type {left, right}: you cannot make the right
+      // prompt depend on the left reply, because you had to build it first.
       const [left, right] = await Promise.all([
         a.run(s.left, depth),
         b.run(s.right, depth),
