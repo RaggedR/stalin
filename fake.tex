@@ -78,7 +78,31 @@ $\Sigma\,(s : S).\,B\,s = \bigcup_{s} \{s\} \times B\,s$ \\
 \end{tabular}
 \end{center}
 
-\section{\texttt{async} has nothing to do with it}
+\section{Three things that are not the same thing}
+
+It is easy --- and this note managed it for several drafts --- to run together
+three decisions that are in fact independent:
+
+\begin{center}
+\footnotesize
+\begin{tabular}{@{}lp{0.42\textwidth}p{0.34\textwidth}@{}}
+\toprule
+& \textbf{what it is} & \textbf{what it needs} \\
+\midrule
+the \textbf{algebra} & prompts, positions, the four combinators
+  & generics, conditional types, a finite index. Nothing else. \\
+the \textbf{location} & where the handler lives: this process, another process,
+  another machine & a function call, a spawn, or HTTP \\
+the \textbf{blocking} & whether the caller waits & independent of both above \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent HTTP does not force asynchrony in your own code; asynchrony does not
+require a network (\texttt{setTimeout} touches nothing); and the algebra
+requires neither. The rest of this section takes them apart one at a time.
+
+\subsection*{\texttt{async} has nothing to do with it}
 
 The real signature carries a \texttt{Promise}, which invites the thought that
 concurrency is somehow load-bearing. It is not. Here is the same encoding with
@@ -155,6 +179,45 @@ What cannot be synchronous is the \emph{listening} side --- \texttt{Deno.serve}
 handlers are async and there is no blocking HTTP server. But that is outside
 the algebra, and the line falls exactly where \S3 says it should:
 \textbf{the container algebra can be synchronous; the event loop cannot.}
+
+\subsection*{And it needed no wire at all}
+
+Strip the last of it away. \texttt{local-tower.ts} is the same algebra with no
+HTTP, no processes, no event loop and no \texttt{async} --- a leaf is a table of
+handler functions, and a hop is a call:
+
+\begin{lstlisting}
+function local<C extends Cont>(label: string, handlers: ...): Runner<C> {
+  return { label, run: <S extends Shape<C>>(shape: S) =>
+    handlers[(shape as {tag: string}).tag](shape as never) as PosAt<C, S> };
+}
+
+const t = tensor(fields, fields);
+const pair = t.run(t.both({tag: "Harvest", hands: 105}, {tag: "Census"}));
+const g: number = pair.left.grain;    // typed HarvestReport -- uncast
+const h: number = pair.right.hands;   // typed CensusReturn  -- uncast
+
+const s = seq(fields, rail);
+const chain = s.run(s.step({tag: "Harvest", hands: 105},
+                           (r) => ({tag: "Haul", grain: r.grain})));  // <-- <|
+\end{lstlisting}
+
+\noindent It runs under \texttt{deno run} with \emph{no permissions at all} ---
+no \texttt{-{}-allow-net}, no \texttt{-{}-allow-run}, no \texttt{-{}-allow-read}
+--- because it touches nothing. The tensor and the sequential composition behave
+exactly as they do across the wire, and every position is typed and uncast.
+
+\note{So why is there a wire?} Two reasons, neither of them about types. The
+first is that the brief asked for one: several servers, possibly on different
+machines, reached by a CLI tool. The second is the interesting one. Every
+commissariat holds a hidden efficiency and a bias --- how much it inflates a
+shortfall --- and the player plans against the reports rather than the truth. In
+a single process that privacy is a \emph{convention}: module-scoped state, one
+stray import from collapsing. Across five processes with nothing but JSON
+between them it is enforced by the operating system, because there is no
+reference to reach through. The game's subject is an information asymmetry, and
+the wire is what makes the asymmetry a fact instead of a promise. It costs about
+a fifth of a second per hop.
 
 \section{Where the dependency is exact}
 
@@ -325,7 +388,9 @@ sound but no longer dependent \\
 is a forwarder by construction \\
 \midrule
 \textbf{Cost} & 10 casts, one phantom field, and a finite index \\
-\textbf{Irrelevant} & \texttt{async}, which is about the socket \\
+\textbf{Irrelevant} & \texttt{async}, the wire, and the event loop --- all three are
+about \emph{where the handler lives} and \emph{who waits}, not about the algebra.
+\texttt{local-tower.ts} runs it with none of them \\
 \bottomrule
 \end{tabular}
 \end{center}
