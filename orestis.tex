@@ -259,8 +259,8 @@ must alter the shell's own state has to be part of the shell.
 
 A remark, because this is the mechanism behind something that catches people out with coding
 agents. Claude Code runs each shell command exactly as the shell runs a program: it forks, and
-the copy execs. A \texttt{cd} in that command moves the copy, and the copy then exits. So no
-command the agent runs can move the agent. The directory it was launched in is therefore the directory it has for the whole session,
+the copy execs. A \texttt{cd} in that command changes the copy's working directory, and the copy then
+exits. So no command the agent runs can change the agent's. The directory it was launched in is therefore the directory it has for the whole session,
 which is why you must start it in the project you actually mean to work on.
 
 \subsection*{Redirection}
@@ -275,7 +275,7 @@ $ cat log
 hello
 \end{lstlisting}
 
-\texttt{2> errs} is the same move on slot~2. Nothing was added to \texttt{echo} to make this
+\texttt{2> errs} redirects descriptor~2 in the same way. Nothing was added to \texttt{echo} to make this
 work, and \texttt{echo} cannot discover that it happened: it wrote to descriptor~1 exactly as
 it always does. Redirection is the shell's syntax and the shell's doing, from beginning to
 end.
@@ -283,7 +283,7 @@ end.
 \subsection*{Pipes}
 
 A \emph{pipe} is a buffer the kernel will hand out on request, with two descriptors: one to
-write into, one to read out of. \texttt{|} is the same move as \texttt{>}, with a pipe where
+write into, one to read out of. \texttt{|} is the same redirection as \texttt{>}, with a pipe where
 the file was. The shell asks for a pipe, forks twice, puts the writing end in the left
 program's slot~1 and the reading end in the right program's slot~0, and execs both.
 
@@ -452,8 +452,7 @@ Claude Code is a CLI process. When it runs a command it does what a shell does: 
 it execs, and the child inherits the parent's identity. There is no sandbox in that
 sentence and no daemon and no privileged helper. \textbf{Claude Code can execute any
 command-line tool with the permissions of the user who launched it} --- on this machine,
-\texttt{robin}. Everything in \S1 above ran as \texttt{robin}, including the
-\texttt{chmod}, including the servers.
+\texttt{robin}. Every command in this note ran as \texttt{robin}, the servers included.
 
 That is worth stating baldly because it is the security model, and it is a model people
 routinely mis-describe. An agent deleting your home directory is not privilege escalation.
@@ -465,33 +464,13 @@ files'' --- only ``this user may read these files''.
 
 \section{HTTP and JSON}
 
-\subsection*{Two moves}
-
-HTTP is a two-move protocol. A client sends a request; a server sends a response; nothing
-else happens. A request is a method, a path, some headers, and optionally a body. A
-response is a three-digit status, some headers, and a body. Every web interaction is a
-variation on that, and one page load is many such pairs.
-
-The four parts do different jobs, and \texttt{stalin} uses each for exactly one thing.
-
-\begin{center}
-\begin{tabular}{lll}
-\toprule
-\textbf{HTTP} & \textbf{Carries} & \textbf{In \texttt{stalin}} \\
-\midrule
-method   & the verb                       & always \texttt{POST}: a prompt is not a lookup \\
-path     & which resource                 & unused; the \emph{port} is the container \\
-headers  & metadata about the message     & \texttt{content-type}, and \texttt{x-tower-depth} \\
-body     & the payload                    & the prompt, as JSON --- and nothing else \\
-status   & what happened                  & 200 answered, 400 not a prompt, 500 handler threw \\
-\bottomrule
-\end{tabular}
-\end{center}
-
 \subsection*{A design that looked far too weak}
 
-It is worth a paragraph on where that came from, because HTTP made the same kind of bet Unix
-made, and it looked just as inadequate at the time.
+HTTP is a request/response protocol: a client sends a request, a server sends a response, and
+nothing else happens. A request is a method, a path, some headers and optionally a body; a response is
+a three-digit status, some headers and a body. It is worth a paragraph on where so little came
+from, because HTTP made the same kind of bet Unix made, and it looked just as inadequate at
+the time.
 
 Tim Berners-Lee's first version, at CERN in 1991, had one method. You opened a connection,
 sent a single line --- \texttt{GET /thepage} --- and read the document that came back. There
@@ -595,9 +574,8 @@ Read the 200 for a moment, because it is the game in four numbers. Forty units o
 capacity, a hundred units of grain in hand, thirty needed at the mill and fifty offered to
 the port: the mill is fed first, which leaves ten units of capacity, so ten reach the port
 and \textbf{forty tons are stranded} --- grain the state owns, has procured, and cannot
-move. That is why a railway is throughput and not capital, and it is the entire content of
-one of the strategies in \S1's table, the one that starves twenty-five people because the
-grain rots.
+move. That is why a railway is throughput and not capital: build too little of it and the
+grain rots where it stands, whatever the harvest was.
 
 The three 400s are all \emph{``that was not a prompt''}, at three depths: not JSON at all;
 JSON but not this container's shape; a tag this container does not have. Only the 500 means
@@ -938,7 +916,7 @@ That third role is also what makes the tower a tower rather than a star:
 gosplan is a client of agriculture, which may in turn be a client of something else, and the
 depth header counts the storeys. \texttt{await} is what joins the two directions --- control
 flowing down the stack of processes, data flowing back up --- and the indentation in the
-trace of \S1 is that stack, printed.
+trace shown earlier is that stack, printed.
 
 \newpage
 \section*{Summary}
