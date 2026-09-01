@@ -508,6 +508,11 @@ nothing else happens. Here is one complete exchange, the request and the respons
 \end{minipage}}
 \end{center}
 
+That is the whole protocol in one screen. A request is a \emph{method} (\texttt{GET}), a
+\emph{path} (\texttt{/books/1}), some \emph{headers} (blue), and optionally a \emph{body} (none
+in this example). A response is a three-digit \emph{status} (\texttt{200}), some headers (blue),
+and a body (green).
+
 \subsection*{A design that looked far too weak}
 
 It is worth a paragraph on where so little came from, because HTTP made the same kind of bet
