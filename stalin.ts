@@ -136,12 +136,22 @@ switch (cmd) {
     const r = await ask({ tag: "Status" });
     const s = r.stocks as Record<string, number>;
     const w = r.workforce as Record<string, number>;
-    const alive = w.fields + w.drivers + w.mill + w.rail + w.army;
+    // There is no army slot: you never conscript during the plan, 1941 calls
+    // up exactly as many as the armaments require. Adding the removed w.army
+    // here made every population read NaN.
+    const alive = w.fields + w.drivers + w.mill + w.rail;
     const row = (a: string, av: unknown, b = "", bv: unknown = "") =>
       `    ${a.padEnd(11)}${String(av).padStart(5)}` +
       (b ? `        ${b.padEnd(11)}${String(bv).padStart(5)}` : "");
 
-    console.log(`\n  ${B(String(r.year))}   ${r.over ? Y("the plan is concluded") : D("in plan")}\n`);
+    // Say which HALF of the year it is. Without this the status looks the
+    // same in spring and autumn, and a player counting them sees five turns
+    // where there are ten.
+    const season = r.over ? "" : String(r.season) === "spring"
+      ? `${B("SPRING")} ${D("— sow: the hands and the quota, before the weather")}`
+      : `${B("AUTUMN")} ${D("— reap: the harvest is in and graded")}`;
+    console.log(`\n  ${B(String(r.year))} ${season}` +
+      `${r.over ? "   " + Y("the plan is concluded") : ""}\n`);
     console.log(`    ${B("LABOUR")}                    ${B("STOCKS")}`);
     console.log(row("fields:", w.fields, "grain:", s.grain));
     console.log(row("drivers:", w.drivers, "steel:", s.steel));
@@ -167,7 +177,7 @@ switch (cmd) {
       const mark = (ok: boolean, t: string) => (ok ? t : D(t));
 
       console.log(`\n    ${B("YOUR ORDERS")}   ${D(`(steel is in ${pos} as of January)`)}\n`);
-      console.log(`    --labour   F,D,M,R,A   ${D(`how the ${alive} living are set to work`)}`);
+      console.log(`    --labour   F,D,M,R     ${D(`how the ${alive} living are set to work`)}`);
       console.log(`    --procure  light | firm | total`);
       console.log(D(`                 15% | 33%  | 65% of the harvest taken; the rest is what the village eats`));
       console.log(`    --export   none | surplus | full | maximum`);
