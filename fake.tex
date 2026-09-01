@@ -102,7 +102,7 @@ processes:
 \noindent \verb#|-# is a shape going forward, \verb#-|# a response coming back.
 Every indent is a morphism.
 
-\section{\texttt{await} is the hinge}
+\section{\texttt{await} composes the two directions}
 
 Here is the whole of a morphism, in code:
 
@@ -111,31 +111,28 @@ const reply = await lower.run(u(prompt));   // shapes forward
 return f(prompt, reply);                    // responses back
 \end{lstlisting}
 
-\noindent Both directions, one function body, read top to bottom. That is what
-\texttt{await} buys, and it is the fake. Remove it and there are two options,
-both of which break something:
+\noindent Both directions, one function body, read top to bottom.
 
-\note{Callbacks invert the control flow.} Written
-\texttt{lower.run(u(prompt), (reply) => \dots)}, the second half of the morphism
-is no longer the continuation of the first --- it is a separate function handed
-downwards. $f$ can no longer be \emph{returned}; it must be \emph{passed}. Two
-morphisms composed become a callback inside a callback, and the composite is no
-longer expressible as a morphism at all. The algebra survives in the types and
-dies in the code.
+\texttt{await} is what makes that possible. A handler is woken by a prompt, and
+before it can answer it usually needs answers from below. At the \texttt{await}
+it \emph{suspends}: it hands control back to the runtime, which is then free to
+wake other handlers, and it resumes at that same point with the reply in hand.
+So $u$ is applied on the line going down, $f$ on the line coming back, and the
+suspension between them is invisible in the text of the function.
 
-\note{Blocking seizes the runtime.} Gosplan is both a server and a client: woken
-by a socket, and while handling that prompt it delegates to four commissariats.
-If those downward calls block --- \texttt{outputSync} rather than \texttt{await}
---- they block the whole isolate. The server cannot accept another connection
-while it waits for its own subordinates. A blocking handler that delegates is
-not merely slower; it has stalled the event loop it lives in.
+\note{Why this closes the algebra.} A morphism written this way is an ordinary
+\texttt{async} function from a prompt to its response --- which is precisely what
+a container's inhabitant is. So composing two morphisms is just calling one
+inside the other, and the composite is again an \texttt{async} function from a
+prompt to its response. \textbf{The morphisms are closed under composition in
+the code, in the same way they are closed under composition in the theory}, and
+a five-level tower is written as five ordinary functions calling one another.
 
-\note{So this is the substitution.} \texttt{async}/\texttt{await} is what lets a
-morphism be an ordinary function in a program that is simultaneously listening
-and calling. Shapes compose forwards through $u$, control suspends at the
-\texttt{await}, and responses compose backwards through $f$ --- with the whole
-chain written as though it were sequential code, which is exactly what the
-algebra assumes it is.
+\note{And it is why a server can also be a client.} Gosplan is woken by a socket
+and, while answering, delegates to four commissariats. Because each of those
+delegations suspends rather than occupies the runtime, Gosplan remains a
+listening server throughout --- one handler, mid-answer, with four prompts
+outstanding beneath it.
 
 \section{The combinators, in both directions}
 
@@ -164,10 +161,10 @@ return { left, right };
 \end{lstlisting}
 
 \noindent Both shapes existed before the call, so neither can depend on the
-other's reply --- independence enforced by the shape type
-$\{\texttt{left}, \texttt{right}\}$, not by the scheduler. The
-\texttt{Promise.all} is concurrency; a synchronous tensor firing its two hops in
-sequence is the same combinator, and slower.
+other's reply --- independence is enforced by the shape type
+$\{\texttt{left}, \texttt{right}\}$ itself: both prompts had to exist before the
+call. The \texttt{Promise.all} sends them together, so the tensor costs one
+round trip rather than two.
 
 \subsection*{$\lhd$ --- where the two directions interleave}
 
@@ -193,7 +190,7 @@ step<SA extends Shape<A>, SB extends Shape<B>>(
 \end{lstlisting}
 
 \noindent In the game: what you may \emph{sell} depends on what the railway
-actually \emph{moved}, and the trade delegation cannot be asked anything until
+actually \emph{moved}, so the trade delegation is asked its question only once
 the haul has answered.
 
 \section{The tower makes the chain real}
@@ -219,15 +216,14 @@ to reach through. The game's subject is an information asymmetry, and the wire
 is what makes it a fact rather than a promise, at about a fifth of a second per
 hop.
 
-\section{What the type system contributes, and what it cannot}
+\section{What the type system contributes}
 
-The handler is the fake; the types are what stop it lying about itself. Three
-mechanisms, and one hard limit.
+The handler is the fake; the types are what hold it to its word.
 
 \subsection*{The container as its graph}
 
-$R$ cannot be a function from values to types, so a container is presented as
-the union of its fibres --- over a \emph{finite} index this is an equality:
+A container is presented as the union of its fibres, which over a
+\emph{finite} index is exactly its $\Sigma$:
 \[
   \Sigma\,(s : S).\,B\,s \;=\; \bigcup_{s \in S} \{s\} \times B\,s
 \]
@@ -242,41 +238,45 @@ type PosAt<C extends Cont, S> =
 The handler's signature then reads \texttt{run<S extends Shape<C>>(shape: S):
 Promise<PosAt<C, S>>} --- ask for a harvest, be handed a harvest report, uncast.
 
-\subsection*{The hard limit, which is not TypeScript's fault}
+\subsection*{The finite index is what makes it exact}
 
-The general definition, as it appears in Agda,
+That equality is the enabling condition, and it is worth being precise about
+why it holds. The general definition of a container, as it appears in Agda,
 \[
-  \textbf{record } \mathrm{Container} : \ \mathrm{Shape} : \mathrm{Set},\quad
+  \textbf{record } \mathrm{Container} : \quad
+  \mathrm{Shape} : \mathrm{Set}, \qquad
   \mathrm{Pos} : \mathrm{Shape} \to \mathrm{Set}
 \]
-requires a function from \emph{values} to \emph{types}. That is a genuine
-dependent function and it is not available in TypeScript --- nor in Haskell,
-where \texttt{data Container = Container \{shape :: Type; pos :: shape -> Type\}}
-is rejected outright: a value-level field cannot be named in a type position.
-The canonical container is the list functor, $\mathrm{Shape} = \mathbb{N}$ and
-$\mathrm{Pos}\,n = \mathrm{Fin}\,n$; writing it needs one constructor per
-natural number in either language.
+asks for $\mathrm{Pos}$ to be a function from \emph{values} to \emph{types} ---
+a genuine dependent function, which is why containers are a dependently typed
+idea and why the canonical example is the list functor, $\mathrm{Shape} =
+\mathbb{N}$ with $\mathrm{Pos}\,n = \mathrm{Fin}\,n$.
 
-\textbf{So containers do need dependent types, and neither language has them.}
-What both can do is the \emph{finite} case, by presenting a container as its
-graph --- unions of fibres read by conditional types in TypeScript, a GADT
-indexed by its response type in Haskell. Every container in this project has
-finitely many prompts, which is the assumption the whole encoding rests on and
-the reason it works at all.
+Every container in this project has \emph{finitely} many prompts, because a
+shape type is a tagged union. Over a finite index the graph presentation is not
+an approximation of $\Sigma$ but an equality, and a conditional type
+distributing over a union computes it exactly. That is the whole reason the
+encoding is sound: not that TypeScript is cleverer than it looks, but that the
+containers being encoded are small enough to write down fibre by fibre.
+
+The same condition governs the same construction elsewhere. In Haskell the
+finite case is a GADT indexed by its response type --- \texttt{Reconcile ::
+(Int,Int) -> Request ReconReport} --- and \texttt{answer :: Request r -> r} is
+the dependent function, checked branch by branch with no casts at all.
 
 \subsection*{The bill}
 
-Ten casts, two per combinator, because every \texttt{run} body must destructure
-a shape it knows only through a conditional type and re-assert the result. All
-ten are inside \texttt{lib/algebra.ts}; none is in the game. Haskell's version
-needs none, because pattern matching on a GADT genuinely refines the type
-rather than asserting it.
+Ten casts, two per combinator, because every \texttt{run} body destructures a
+shape it knows through a conditional type and re-asserts the result. All ten sit
+inside \texttt{lib/algebra.ts}; none is in the game, where no call site ever
+asserts the type of a position.
 
-Two silent traps, both costly: the fibre test written \texttt{Extract<C, Fib<S,
-unknown>>} instead of \texttt{S extends S1} makes every position \texttt{never};
-and a type parameter occurring only inside conditional types is not an inference
-site, so \texttt{seqC(a, b)} silently infers \texttt{A = Cont} unless
-\texttt{Runner} carries a phantom \texttt{readonly fibres?: C}.
+Two pieces of machinery earn their keep quietly. \texttt{PosAt} tests
+\texttt{S extends S1} --- the fibre a held shape \emph{lies in}, since a shape in
+hand is usually narrower than its fibre's declared type. And \texttt{Runner}
+carries a phantom \texttt{readonly fibres?: C}, never assigned, which gives
+\texttt{C} an inferable position so that \texttt{seqC(a, b)} recovers its
+arguments.
 
 \section*{Summary}
 
@@ -284,21 +284,19 @@ site, so \texttt{seqC(a, b)} silently infers \texttt{A = Cont} unless
 \footnotesize
 \begin{tabular}{@{}p{0.26\textwidth}p{0.66\textwidth}@{}}
 \toprule
-\textbf{The fake} & an \texttt{async} event handler: $(p : P) \to R\,p$ woken by a socket \\
+\textbf{The fake} & an \texttt{async} event handler: $(p : P) \to R\,p$, woken by a socket \\
 \textbf{What it buys} & shapes compose \emph{forwards} through $u$ and responses
-  compose \emph{backwards} through $f$, in one straight-line function ---
-  in a program that is listening and calling at the same time \\
-\textbf{Why not callbacks} & control inverts; $f$ must be passed rather than
-  returned, and composites stop being morphisms \\
-\textbf{Why not blocking} & a handler that delegates and blocks stalls the event
-  loop it lives in \\
-\textbf{The hard combinator} & $\lhd$, where a response turns around and becomes
+  compose \emph{backwards} through $f$, in one straight-line function \\
+\textbf{Why it composes} & a morphism is an ordinary \texttt{async} function from
+  prompt to response, so composing two is calling one inside the other \\
+\textbf{Why it scales} & suspension rather than occupation, so a handler can be
+  mid-answer with four prompts outstanding and still be listening \\
+\textbf{The rich combinator} & $\lhd$, where a response turns around and becomes
   the next shape \\
 \textbf{What types add} & the response type follows from the prompt, uncast, at
   ten casts confined to one library \\
-\textbf{What nothing adds} & the general $\mathrm{Pos} : \mathrm{Shape} \to
-  \mathrm{Set}$. Finite containers only --- in TypeScript and in Haskell alike \\
-\bottomrule
+\textbf{What makes it exact} & finitely many prompts per container, so the graph
+  presentation of $\Sigma$ is an equality \\
 \end{tabular}
 \end{center}
 
