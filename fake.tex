@@ -207,6 +207,31 @@ and shapes are what survive a wire. A CLI tool calls a CLI tool, whose server
 calls another, and the responses compose back up the same chain; the
 \texttt{depth} header is what indents the trace above.
 
+\note{What \texttt{depth} is.} A count of container boundaries crossed. The
+player's client sends zero; each handler reads it, traces at that indent, and
+delegates at $\texttt{depth}+1$:
+
+\begin{lstlisting}
+const depth = Number(req.headers.get("x-tower-depth") ?? "0");
+trace(depth, "down", opts.name, describe(prompt));
+const reply = await opts.answer(prompt, depth + 1);
+\end{lstlisting}
+
+\noindent It rides in an HTTP header rather than in the prompt, and that is a
+typing decision rather than a convention. The prompt is the container's
+\emph{shape}, so putting a depth in it would grow every shape type in the game
+by a field --- \texttt{\{tag:"Harvest", workforce, tractors, year, depth\}} ---
+and $R$ would then be indexed over the plumbing. The header is the channel for
+things that must cross a boundary without joining the container, which is the
+same instinct that keeps \texttt{Promise} out of it: both describe how an answer
+reaches you, not what the answer is.
+
+It earns its place because each server logs to its own file. Five flat streams
+carry no record of what nested inside what; the counter is the only thing tying
+\texttt{agri}'s \texttt{Harvest} to the \texttt{Sow} that caused it, and it is
+what lets them be read back as one tree. Nothing in the game consults it ---
+set it wrongly and only the indentation suffers.
+
 \note{Why processes rather than function calls.} Each commissariat holds a
 hidden efficiency and a bias --- how much it inflates a shortfall --- and the
 player plans against the reports, not the truth. Inside one process that privacy
