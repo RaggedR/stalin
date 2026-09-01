@@ -103,8 +103,18 @@ notes are just as much for myself as for anybody else.
 
 Neil Ghani's \emph{Containers for Typed Agentic AI} describes an algebra: an interface is a pair
 --- the prompts you may send, and, \emph{for each prompt}, the type of reply that would answer
-it --- and such interfaces compose, in four different ways. It is a construction in dependent
-type theory. TypeScript has no dependent types.
+it --- and such interfaces compose.
+
+There are four ways to compose them, and the differences between them are the whole point. Two
+interfaces can be offered as alternatives, so that a prompt goes to one \emph{or} the other
+($+$). They can be run together, so that both are prompted and \emph{both} must answer
+($\boxtimes$). They can be chained, so that the reply to the first decides what the second is
+asked ($\lhd$). Or they can be offered together so that both are prompted and \emph{exactly
+one} answers ($\times$) --- which sounds like the second one and is not, and the difference
+between those two is, in the game below, the difference between doing two things and choosing
+between them.
+
+All of that is a construction in dependent type theory. TypeScript has no dependent types.
 
 This note is about faking it anyway, and the claim it makes is that the fake is good enough to
 run a game on. Two ordinary things do the work: command-line tools, and \texttt{async} event
@@ -505,6 +515,12 @@ starts, is prompted once, answers, and exits. It is nonetheless event-driven in 
 matters, because what makes a program event-driven is the prompt-indexed response type and not
 the waiting. Strip the loop away and this is what remains.
 
+Hold on to that pair, because the rest of this note is the same pair four more times: a prompt,
+and a reply whose type is fixed by which prompt it was. What is missing here is any enforcement.
+Nothing checks that \texttt{git log} returns a list of commits; the promise lives in a manual
+page and in the habits of whoever wrote the program. Every layer that follows adds an enforcer
+--- and each one enforces a little more, over a little less.
+
 \section{The Claude Code harness}
 
 Claude Code is a CLI process. When it runs a command it does what the shell does: it
@@ -515,6 +531,11 @@ file that user can read and write, and it can execute any command that user can 
 
 In production one would create a user with limited permissions and run the Claude
 Code executable as that user.
+
+This is the first enforcer, and the bluntest in the note. The kernel will not let a process read
+a file its user may not read --- and it has no opinion whatever about whether the bytes in that
+file mean anything. Strong, and narrow. Everything above it trades some of that strength for the
+ability to say something about meaning.
 
 \section{HTTP and JSON}
 
@@ -551,6 +572,11 @@ That is the whole protocol in one screen. A request is a \emph{method} (\texttt{
 \emph{path} (\texttt{/books/1}), some \emph{headers} (blue), and optionally a \emph{body} (none
 in this example). A response is a three-digit \emph{status} (\texttt{200}), some headers (blue),
 and a body (green).
+
+Notice that this is the pair from the first section again, this time over a wire: the request is
+the prompt, the response is the reply, and which reply is appropriate depends on which request
+arrived. What HTTP adds is the first enforcement of that pairing --- a three-digit number saying
+whether the request was even a request. A small addition, and exactly one thing.
 
 \subsection*{A design that looked far too weak}
 
@@ -956,6 +982,12 @@ the checker is reasoning about a claim rather than a fact.
 
 Which is why the whole of it rests on the smallest piece: a function with the signature
 \texttt{unknown → T | null}, that looks at the fields, and refuses.
+
+And that is the pair a fourth time, with the strongest enforcer yet standing on one side of it.
+The handler table is a prompt together with a reply whose type is fixed by the prompt, and the
+compiler checks the pairing exhaustively --- but only inside one process. The kernel checked
+everything and understood nothing; the compiler understands everything and checks almost
+nothing, because almost nothing stays where it can see it.
 
 \section*{Summary of the concepts}
 
