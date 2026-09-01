@@ -1,0 +1,989 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=black,urlcolor=blue]{hyperref}
+\usepackage{parskip}
+
+\definecolor{kw}{RGB}{20,80,160}
+\definecolor{cmt}{RGB}{110,110,110}
+\definecolor{str}{RGB}{160,60,20}
+\definecolor{codebg}{RGB}{246,246,244}
+
+\lstdefinestyle{code}{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{kw}\bfseries,
+  commentstyle=\color{cmt}\itshape,
+  stringstyle=\color{str},
+  breaklines=true,
+  frame=leftline,
+  framesep=7pt,
+  xleftmargin=12pt,
+  rulecolor=\color{gray!45},
+  backgroundcolor=\color{codebg},
+  columns=fullflexible,
+  showstringspaces=false,
+  keepspaces=true,
+  literate=
+    {↓}{{$\downarrow$}}1 {↑}{{$\uparrow$}}1
+    {→}{{$\rightarrow$}}1 {⊠}{{$\boxtimes$}}1
+    {◁}{{$\lhd$}}1 {×}{{$\times$}}1 {—}{{\textemdash}}1 {’}{{'}}1,
+}
+\lstset{style=code}
+
+% Keep every code block whole: wrapping each listing in an unbreakable minipage
+% makes LaTeX move it to the next page rather than split it across one.
+\usepackage{etoolbox}
+\BeforeBeginEnvironment{lstlisting}{\par\vspace{0.4\baselineskip}\noindent\begin{minipage}{\linewidth}}
+\AfterEndEnvironment{lstlisting}{\end{minipage}\par\vspace{0.4\baselineskip}}
+
+% Terminal trace: literate arrows are mis-placed under columns=fullflexible,
+% and a literate glyph opening line 1 is flushed onto its own line -- hence
+% keepspaces and the leading space on every line of the block below.
+\lstdefinestyle{trace}{
+  basicstyle=\ttfamily\small,
+  keepspaces=true,
+  frame=leftline, framesep=7pt, xleftmargin=12pt,
+  rulecolor=\color{gray!45},
+  backgroundcolor=\color{codebg},
+  literate={↓}{{$\downarrow$}}1 {↑}{{$\uparrow$}}1 {…}{{\ldots}}1,
+}
+
+\lstdefinelanguage{TS}{
+  morekeywords={type,function,switch,case,return,const,extends,never,interface,let,await,async,export,import,null,unknown,new,try,catch,throw,in,of},
+  morecomment=[l]{//},
+  morestring=[b]",
+}
+\lstdefinelanguage{SH}{
+  morekeywords={curl,deno,run,export,for,do,done,if,then,fi,echo,sort,head,chmod,cat},
+  morecomment=[l]{\#},
+  morestring=[b]',
+}
+
+\title{\vspace{-2em}Stalin: The Game}
+\author{Robin Langer}
+\date{1 September 2026}
+
+\begin{document}
+\maketitle
+
+\section{The Unix philosophy, pipes, and CLI tools}
+
+In case the reader is a little rusty, we begin with a brief review of the Unix this note
+leans on: what a process is, how one reaches the world outside itself, how two of them are
+joined together, and why a command-line tool has the shape it has. None of this is specific
+to the game \texttt{stalin}, but all of it is used by the game \texttt{stalin} --- so the
+review is the first half of the explanation of our design choices.
+
+Each part below introduces one idea and, where it helps, one small example that illustrates
+only that idea. Nothing is used before it has been introduced.
+
+\subsection*{A process}
+
+A \emph{process} is one running program, together with everything the kernel keeps on its
+behalf: its memory, its position in the code, its identity --- which user it runs as --- and a
+number. A program is a file sitting on a disk, and does nothing; a process is that file in
+motion. Run the same program twice and you have two processes which share nothing and cannot
+see each other.
+
+The number is the process's \emph{pid}. It is how anything outside the process refers to it,
+and there is no other handle: to stop a program you send a signal to its pid.
+
+\subsection*{User space and kernel space}
+
+A running machine is divided in two. Your code executes in \emph{user space}, where it may
+compute freely and touch nothing: it cannot address a disk, a network card, or another
+process's memory, because the processor is in a mode that forbids it. The \emph{kernel}
+executes in kernel space, where it may touch everything. The division is enforced by the
+hardware, not by convention.
+
+There is exactly one interface between the two: the \emph{system call}. It suspends your
+process, switches the processor into kernel mode, runs kernel code on your process's behalf,
+and returns. Every effect a program has on the world outside its own memory is a system call.
+There is no other mechanism.
+
+\subsection*{\texttt{read} and \texttt{write}}
+
+That interface could have been wide. It is in fact very narrow. The two calls that matter most
+are these:
+
+\begin{lstlisting}[language=SH]
+read (n, buffer, count)   -- give me up to count bytes from the thing numbered n
+write(n, buffer, count)   -- take these count bytes and put them in the thing numbered n
+\end{lstlisting}
+
+Each takes a number identifying something already open, a place to put bytes or take them
+from, and how many. Between them they are very nearly the whole interface to the outside
+world. What that number is, and where it comes from, is the subject of two subsections below.
+
+\subsection*{Everything is a file}
+
+Why should two calls be enough? Because of a design decision usually stated as a slogan:
+\textbf{everything is a file}. A file on a disk, a terminal, a network connection, a source of
+random bytes --- all of them are presented to user space through the same interface, so the
+same two calls reach all of them.
+
+The slogan overstates itself in one respect, and it is worth being precise about which. Things
+do differ in how they are \emph{made}: a file is opened by name, a network connection has to
+be built by a short sequence of calls of its own. What they do not differ in is how they are
+\emph{used}. Once the thing exists and you are holding its number, \texttt{read} and
+\texttt{write} are the whole vocabulary. The uniformity is at the point of use --- which is the
+point that matters, because using is where one program meets another.
+
+\subsection*{File descriptors}
+
+That number is a \emph{file descriptor}. It is a small non-negative integer, and it is an
+index into a table the kernel keeps for each process, whose entries point at the things that
+process has open. Nothing in the number says what kind of thing it is. The descriptor is an
+opaque handle, and that is exactly why one program can be pointed at a file one day and at a
+network connection the next without being rewritten.
+
+Three entries are filled in before a process begins, and it did not fill them in itself ---
+whoever started it did.
+
+\begin{lstlisting}[language=SH]
+0   standard input    the stream the program reads
+1   standard output   where its results go
+2   standard error    where its complaints go
+\end{lstlisting}
+
+Start a program from a terminal and all three point at that terminal, which is why results
+and complaints appear jumbled together in one scrolling window. That is a property of the
+terminal, not of the program.
+
+\subsection*{\texttt{cat}}
+
+Everything so far is enough to write a real Unix program. \texttt{cat} --- named for
+\emph{concatenate} --- copies its input to its output, unchanged, and does nothing else. That
+is its entire specification, and it is almost exactly \texttt{read} and \texttt{write} in a
+loop:
+
+\begin{lstlisting}[language=SH]
+char buf[4096];
+for (;;) {
+    n = read(0, buf, 4096);   -- take up to 4096 bytes from standard input
+    if (n == 0) break;        -- 0 bytes means end of input; stop
+    if (n <  0) exit(1);      -- negative means the read itself failed
+    write(1, buf, n);         -- put exactly those n bytes on standard output
+}
+\end{lstlisting}
+
+The real \texttt{cat} is longer, but the extra length is all flags and error messages; that
+loop is the program. Look at what it does \emph{not} contain. It never asks what \texttt{0} is
+attached to, or what \texttt{1} is attached to, because \texttt{read} and \texttt{write}
+provide no way to ask. A disk file, a keyboard, another program's output: the loop is
+identical and the program cannot tell the difference.
+
+\subsection*{\texttt{fork} and \texttt{exec}}
+
+Two more system calls, and they are the two that make new processes.
+
+\texttt{fork} \emph{duplicates} the calling process. Where there was one process there are now
+two, identical in their memory, their open descriptors and their position in the code,
+differing only in the value \texttt{fork} handed back --- which is how each tells whether it is
+the original or the copy.
+
+\texttt{exec} \emph{replaces} the program running inside a process. Same process, same pid,
+same descriptor table, but the old code and memory are discarded and a new program is loaded
+in their place.
+
+Neither is a ``run this program'' call, and that is the point: to start a program, a process
+\texttt{fork}s, and then the copy \texttt{exec}s. The descriptor table survives both, so the
+copy inherits the original's descriptors --- and in the gap between the two calls the copy is
+still running the original's code, so it can rearrange its own table before replacing itself.
+Three subsections below turn on that gap.
+
+\subsection*{The shell}
+
+The shell is not part of the kernel and has no privilege you do not have. It is an ordinary
+program running in user space with your identity, and its purpose is to start other programs.
+That is all it is: a program whose job is running programs. Two things it relies on come
+first, and then what it does with a line you have typed.
+
+\subsubsection*{The environment}
+
+One more thing a process carries: its \emph{environment}, a set of named strings held
+alongside its memory and its descriptor table. They are called variables, but they are only
+ever text. Like the descriptor table, the environment survives \texttt{fork} and \texttt{exec},
+so a new process starts with a copy of the one that started it:
+
+\begin{lstlisting}[language=SH]
+$ export GREETING=hello     -- add it to this shell environment
+$ sh -c 'echo $GREETING'    -- a different process, started by this one
+hello
+\end{lstlisting}
+
+That is the whole of it: named text, inherited downwards. The most used of them is
+\texttt{PATH}, which holds a list of directories; the shell searches them whenever it is
+looking for a program to run.
+
+\subsubsection*{Globbing}
+
+A word containing \texttt{*}, \texttt{?} or \texttt{[\,\ldots]} is a \emph{glob}: a pattern to
+be matched against the names of files that exist. \texttt{*} stands for any run of characters,
+\texttt{?} for a single one, \texttt{[abc]} for one character out of a set.
+
+The matching is done by the shell, before any program is started:
+
+\begin{lstlisting}[language=SH]
+$ echo *.txt
+log.txt notes.txt other.txt
+\end{lstlisting}
+
+\texttt{echo} prints its arguments and nothing else, so what it printed is exactly what it was
+given: three filenames. It never saw an asterisk. That is why every program accepts patterns,
+and why no program contains any code for matching them.
+
+\subsubsection*{What the shell does with a line}
+
+Given a line, the shell does five things, and every one of them has already been described.
+
+\begin{enumerate}
+\item \textbf{Split the line into words.} The first word names what to run; the rest become
+      the argument vector that program will receive.
+\item \textbf{Find the program.} The first word is looked for in each directory named by
+      \texttt{PATH}, in order, and the first match wins.
+\item \textbf{\texttt{fork}.} The shell duplicates itself.
+\item \textbf{\texttt{exec}.} The copy replaces itself with the program. The shell that read
+      the line is still there, waiting for it to finish.
+\item \textbf{Keep the exit status.} When the program finishes the kernel gives the shell a
+      small number it left behind, by convention zero for success.
+\end{enumerate}
+
+One command cannot work that way, and the reason is worth seeing. \texttt{cd} has to be built
+into the shell rather than being a program, because a program runs in the copy, and the copy
+changing its own working directory would leave the shell exactly where it was. Anything that
+must alter the shell's own state has to be part of the shell.
+
+A remark, because this is the mechanism behind something that catches people out with coding
+agents. Claude Code runs each shell command exactly as the shell runs a program: it forks, and
+the copy execs. A \texttt{cd} in that command moves the copy, and the copy then exits. So no
+command the agent runs can move the agent. The directory it was launched in is therefore the directory it has for the whole session,
+which is why you must start it in the project you actually mean to work on.
+
+\subsection*{Redirection}
+
+Now the gap between \texttt{fork} and \texttt{exec}. Writing \texttt{> log} after a command
+tells the shell: in the copy, and before exec'ing, open the file \texttt{log} and put it in
+slot~1.
+
+\begin{lstlisting}[language=SH]
+$ echo hello > log      -- slot 1 is now the file, not the terminal
+$ cat log
+hello
+\end{lstlisting}
+
+\texttt{2> errs} is the same move on slot~2. Nothing was added to \texttt{echo} to make this
+work, and \texttt{echo} cannot discover that it happened: it wrote to descriptor~1 exactly as
+it always does. Redirection is the shell's syntax and the shell's doing, from beginning to
+end.
+
+\subsection*{Pipes}
+
+A \emph{pipe} is a buffer the kernel will hand out on request, with two descriptors: one to
+write into, one to read out of. \texttt{|} is the same move as \texttt{>}, with a pipe where
+the file was. The shell asks for a pipe, forks twice, puts the writing end in the left
+program's slot~1 and the reading end in the right program's slot~0, and execs both.
+
+\begin{lstlisting}[language=SH]
+$ cat notes.txt | wc -l
+       3
+\end{lstlisting}
+
+\texttt{wc -l} counts the lines on its standard input. It was given no filename and does not
+know one exists.
+
+Both programs run at the same time; \texttt{wc} does not wait for \texttt{cat} to finish. The
+buffer is finite --- $64 \times 1024$ bytes on Linux --- and the kernel makes each side wait for the other
+rather than growing it. When it is full, \texttt{cat}'s next \texttt{write} does not return
+until \texttt{wc} has consumed something; when it is empty, \texttt{wc}'s next \texttt{read}
+does not return until \texttt{cat} has produced something. Neither program contains a line of
+code about this.
+
+Two things follow, and both are worth having in mind. A pipeline over a very large file needs
+no more memory than a pipeline over a small one, because at no moment does either process hold
+more than the buffer. And the second program starts answering immediately rather than at the
+end: in \texttt{cat huge.log | grep x}, the command \texttt{grep} is handed the first
+$64 \times 1024$ bytes as soon as \texttt{cat} has written them and reports its first match
+from those, while \texttt{cat} is still reading. It does not need to wait for \texttt{cat} to finish, and
+nothing in either program arranges for it not to. That is simply what two processes and one
+finite buffer do.
+
+\subsection*{Exit status, and the shell's control flow}
+
+The small number a program leaves behind is what the shell builds its control flow on.
+
+\begin{itemize}
+\item \texttt{;} --- run the next command regardless of the status.
+\item \texttt{\&\&} --- run the next command only if the previous one exited zero.
+\item \texttt{||} --- run the next command only if the previous one exited non-zero.
+\item \texttt{\&} --- start this command and do not wait for it, so several can run at once.
+\end{itemize}
+
+We could say a good deal more about all this, but it is not really relevant to the game
+\texttt{stalin}.
+
+\subsection*{Shell scripts}
+
+A file of such lines is a shell script, and running it is the same as having typed them. So a
+pipeline that worked once can be kept and named. And because a script is started like any
+other program --- found on \texttt{PATH}, \texttt{fork}ed, \texttt{exec}ed, its status
+collected --- a script can appear in a pipeline itself, on either side, and nothing that uses
+it needs to know it is a script.
+
+\subsection*{Three channels, not one}
+
+Gather up what a program actually offers the world outside it. There are three separate
+channels, and they carry three different kinds of thing.
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Channel} & \textbf{Carries} & \textbf{Read by} \\
+\midrule
+descriptor 1 (stdout) & the results  & the next program in the pipeline \\
+descriptor 2 (stderr) & the narration & a person \\
+the exit status       & the verdict  & the shell \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Keeping them apart is what makes a program usable by another program: a pipe takes
+descriptor~1 and nothing else, so whatever reads from a program receives its results and never
+has to sort them out from error text. Putting results and narration both on descriptor~1 is
+the commonest way to make a program unusable in a pipeline.
+
+\subsection*{Manual pages, and what is not checked}
+
+None of the above is checked by anything. The interface between two programs is bytes: any
+two can be joined, which is the strength, and nothing verifies that the composition means
+anything, which is the cost. What a program promises is written in its manual page and nowhere
+else, so the only thing enforcing it is that you read it.
+
+Here is what that costs. You want to build only if the log has no errors in it, so you write
+this:
+
+\begin{lstlisting}[language=SH]
+$ grep -c ERROR log && ./build
+\end{lstlisting}
+
+\texttt{\&\&} runs the next command only if the previous one exited zero, and \texttt{grep}
+exits zero when it \emph{finds} something. So the line does the exact opposite of what you
+wanted.
+
+\begin{lstlisting}[language=SH]
+$ grep -c ERROR dirty.log && ./build
+1
+  building                  -- errors present, grep exits 0, so it builds
+$ grep -c ERROR clean.log && ./build
+0                           -- no errors, grep exits 1, so it does not
+\end{lstlisting}
+
+It builds exactly when the log is dirty and refuses exactly when the log is clean. Both halves
+of \texttt{grep}'s behaviour are documented and neither is enforced, the shell did precisely
+what it was told, and nothing anywhere reports a problem.
+
+What you wanted was \texttt{grep} answering \emph{did you find anything} rather than
+\emph{how many}. That is what \texttt{-q} is for: it prints nothing at all and reports only in
+its exit status --- zero if it found at least one match, one if it found none. Put the test
+where the shell can actually see it, and use \texttt{||} so the build runs when nothing was
+found:
+
+\begin{lstlisting}[language=SH]
+$ grep -q ERROR log || ./build
+\end{lstlisting}
+
+Notice that \texttt{-c} was carrying that same exit status all along. The count it printed was
+never the thing \texttt{\&\&} was reading.
+
+A note before leaving this. Claude is an absolute master at writing shell scripts, and this is
+genuinely a place where you do not need the details. Ask Claude for a script that builds
+only when the log is clean and you will get a correct one. What you do need is the concept.
+
+\textbf{None of this is enforced, and this is a deliberate design decision.} The only thing holding any of
+it together is ``developer discipline'' --- somebody read the manual page --- and at this level of
+the stack that is the whole of the enforcement there is.
+
+\subsection*{The dictum}
+
+Let's summarise what we have: one uniform interface reached by \texttt{read} and
+\texttt{write}, three separate channels, and a pipe that joins one program to another. With
+that on the table, the philosophy reads as a consequence of the machinery rather than as an
+aspiration. Doug McIlroy, who wrote the pipe into Unix v3 in 1973, put it in three sentences:
+
+\begin{quote}
+Write programs that do one thing and do it well. Write programs to work together. Write
+programs to handle text streams, because that is a universal interface.
+\end{quote}
+
+Mike Gancarz later expanded this into nine tenets --- small is beautiful; each program does one
+thing well; build a prototype as soon as you can; choose portability over efficiency; store
+data in flat text; use software leverage; use scripts to increase leverage and portability;
+avoid captive user interfaces; make every program a filter.
+
+The last is the one that matters here, and it is the least obeyed. A \emph{filter} is a
+program that reads a stream and writes a stream: its input is not a dialogue and its output is
+not a report to a human. \texttt{cat}, \texttt{wc} and \texttt{grep} are filters, which is why
+the examples above could be assembled without any of them having been designed for each other.
+
+\subsection*{A CLI tool is already a dependent function}
+
+One last observation, and it is the one this note turns on.
+
+A command-line tool receives one prompt --- its argument vector --- and produces a response
+whose \emph{type depends on which prompt it was}. \texttt{git log} answers with a list of
+commits; \texttt{git status} answers with a working tree. Those are not the same kind of
+thing, and which kind you get is fixed by the word after \texttt{git}. That is
+$(p : P) \to R\,p$, with $P$ the subcommands and $R$ the result type of each. The interface
+$(P, R)$ is what \texttt{--help} prints.
+
+Notice what is \emph{absent}. No event loop, no callbacks, no waiting, no concurrency. A CLI
+starts, is prompted once, answers, and exits. It is nonetheless event-driven in the sense that
+matters, because what makes a program event-driven is the prompt-indexed response type and not
+the waiting. Strip the loop away and this is what remains.
+
+\section{The Claude Code harness: kernel, shell, and permissions}
+
+\subsection*{What the harness is}
+
+Claude Code is a CLI process. When it runs a command it does what a shell does: it forks,
+it execs, and the child inherits the parent's identity. There is no sandbox in that
+sentence and no daemon and no privileged helper. \textbf{Claude Code can execute any
+command-line tool with the permissions of the user who launched it} --- on this machine,
+\texttt{robin}. Everything in \S1 above ran as \texttt{robin}, including the
+\texttt{chmod}, including the servers.
+
+That is worth stating baldly because it is the security model, and it is a model people
+routinely mis-describe. An agent deleting your home directory is not privilege escalation.
+It is your own privilege, used badly, by a process you started. Unix gives every process
+\emph{ambient authority}: authority attaches to the identity of the running user, not to
+the particular task, so a process may do anything its user may do merely by virtue of
+existing. There is no way, at the kernel level, to say ``this program may read \emph{these}
+files'' --- only ``this user may read these files''.
+
+\section{HTTP and JSON}
+
+\subsection*{Two moves}
+
+HTTP is a two-move protocol. A client sends a request; a server sends a response; nothing
+else happens. A request is a method, a path, some headers, and optionally a body. A
+response is a three-digit status, some headers, and a body. Every web interaction is a
+variation on that, and one page load is many such pairs.
+
+The four parts do different jobs, and \texttt{stalin} uses each for exactly one thing.
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{HTTP} & \textbf{Carries} & \textbf{In \texttt{stalin}} \\
+\midrule
+method   & the verb                       & always \texttt{POST}: a prompt is not a lookup \\
+path     & which resource                 & unused; the \emph{port} is the container \\
+headers  & metadata about the message     & \texttt{content-type}, and \texttt{x-tower-depth} \\
+body     & the payload                    & the prompt, as JSON --- and nothing else \\
+status   & what happened                  & 200 answered, 400 not a prompt, 500 handler threw \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection*{A design that looked far too weak}
+
+It is worth a paragraph on where that came from, because HTTP made the same kind of bet Unix
+made, and it looked just as inadequate at the time.
+
+Tim Berners-Lee's first version, at CERN in 1991, had one method. You opened a connection,
+sent a single line --- \texttt{GET /thepage} --- and read the document that came back. There
+were no headers, no status codes, and no content types. The end of the response was signalled
+by the connection closing. That is the whole protocol. Methods, statuses and headers arrived in
+1996, and persistent connections in 1997, but the shape did not change: one request, one
+response, and a server that remembers nothing about you afterwards.
+
+Statelessness in particular looked like a straightforward defect. A protocol that cannot
+remember the previous request cannot have sessions, cannot have transactions, cannot notify you
+when something happens, and cannot check that what you sent was even the right kind of thing.
+The competition was much better appointed. Gopher, of the same year, served structured menus
+rather than untyped documents. The distributed-object systems of the decade --- CORBA, then
+DCOM, later SOAP --- offered typed interfaces, described in a formal language, with generated
+client stubs and objects on the server that stayed alive between calls. On paper they were
+strictly more capable, and almost all of it is gone.
+
+What the weakness bought is exactly what it looks like it costs. Because a request carries
+everything needed to answer it, \emph{any} server can answer \emph{any} request: put a hundred
+machines behind one name and requests may be sprayed across them in any order. Because a
+response depends only on its request, anything in between may keep a copy and answer the next
+one itself. And because the server holds nothing on your behalf, a server that dies loses one
+request rather than your session. Load balancing and caching were not added to HTTP later ---
+they are consequences of the thing that looked like the flaw.
+
+The best evidence is what has happened since. The encoding on the wire has been replaced twice
+--- a binary framing in 2015, and a different transport underneath it in 2022 --- and both
+times the semantics were left exactly as they were: a method, a path, some headers, a body, and
+a three-digit status. Two complete rewrites of how the bytes travel, and nothing above had to
+be rethought. That is what a correct interface looks like in retrospect.
+
+The parallel with the previous section is close enough to be worth naming. A pipe carries bytes
+and does not know what they mean; an HTTP response carries bytes and a string saying what they
+are. In both cases the interface is universal precisely because it is weak, in both cases
+nothing verifies that an exchange means anything, and in both cases what was rebuilt on top of
+the weakness --- sessions, from cookies onwards --- had to be rebuilt without any help from the
+protocol at all.
+
+\subsection*{Why HTTP at all}
+
+The five commissariats could have been five modules and every hop a function call. They are
+not, and the reason is in the comment at the top of \texttt{wire.ts}:
+
+\begin{quote}
+A hop costs a process, which is the whole point: control genuinely flows down, and the
+boundary is real rather than a function call wearing a costume.
+\end{quote}
+
+A container morphism has a delegate leg $u : P \to Q$ that maps \emph{shapes}, and shapes
+are exactly what survives a wire. If the hop were a function call, nothing would stop a
+handler reaching into the caller's state, and the claim that the levels are separate would
+be untestable. Making it a socket makes the claim falsifiable: anything that crosses must
+be expressible in JSON, and the compiler on the far side has never heard of your types.
+
+The cost is honest and is written down --- about a fifth of a second per hop, which a
+hundred-game parameter search pays forty times per game, hence the \texttt{STALIN\_INPROC}
+escape hatch that keeps the HTTP hop and skips only the spawn. No game a player sees uses it.
+
+\subsection*{Status codes carry the kind of failure}
+
+This is the part worth copying into other projects. The three outcomes are genuinely
+different kinds of thing, and the status vocabulary already distinguishes them. From
+\texttt{serveContainer}:
+
+\begin{lstlisting}[language=TS]
+try { body = await req.json(); }
+catch { return json({ error: "not JSON" }, 400); }
+
+const prompt = opts.parse(body);
+if (prompt === null) {
+  // The validator refused.  No cast was made, so nothing ill-typed is
+  // downstream of this line -- that is the whole point of validating.
+  return json({ error: "not a valid prompt for this container", got: body }, 400);
+}
+try   { return json(await opts.answer(prompt, depth + 1), 200); }
+catch (e) { return json({ error: msg }, 500); }
+\end{lstlisting}
+
+Against the live transport commissariat on port 8804:
+
+\begin{lstlisting}[language=SH]
+$ curl -s -i -X POST localhost:8804 -H 'content-type: application/json' \
+    -d '{"tag":"Haul","railCapacity":40,"available":100,
+         "needIndustry":30,"offerPort":50,"year":1929}'
+HTTP/1.1 200 OK
+{"toIndustry":30,"toPort":10,"stranded":40,"short":0}
+
+$ curl -s -X POST localhost:8804 -d '{"tag":"Haul","railCapacity":"lots"}'
+HTTP/1.1 400 Bad Request
+{"error":"not a valid prompt for this container","got":{"tag":"Haul","railCapacity":"lots"}}
+
+$ curl -s -X POST localhost:8804 -d 'not json at all'
+HTTP/1.1 400 Bad Request
+{"error":"not JSON"}
+
+$ curl -s -o /dev/null -w '%{http_code}\n' -X POST localhost:8804 -d '{"tag":"Purge"}'
+400
+\end{lstlisting}
+
+Read the 200 for a moment, because it is the game in four numbers. Forty units of rail
+capacity, a hundred units of grain in hand, thirty needed at the mill and fifty offered to
+the port: the mill is fed first, which leaves ten units of capacity, so ten reach the port
+and \textbf{forty tons are stranded} --- grain the state owns, has procured, and cannot
+move. That is why a railway is throughput and not capital, and it is the entire content of
+one of the strategies in \S1's table, the one that starves twenty-five people because the
+grain rots.
+
+The three 400s are all \emph{``that was not a prompt''}, at three depths: not JSON at all;
+JSON but not this container's shape; a tag this container does not have. Only the 500 means
+``that was a prompt and answering it went wrong''. Getting this split right is what lets a
+caller distinguish a bug in itself from a bug in its callee, which is the only reason
+status codes exist.
+
+\subsection*{Where the depth rides, and why}
+
+\texttt{wire.ts} opens by saying two things cross between levels: a JSON document and a
+depth counter. The depth is used only for indenting the trace. It travels in a header:
+
+\begin{lstlisting}[language=TS]
+const DEPTH_HEADER = "x-tower-depth";
+
+export const depthHeaders = (depth: number) => ({
+  "content-type": "application/json",
+  [DEPTH_HEADER]: String(depth),
+});
+\end{lstlisting}
+
+The reason is a one-liner in the source and it is a genuine design principle:
+
+\begin{quote}
+The depth rides in an HTTP header rather than in the prompt, because the prompt is the
+container's shape and nothing that isn't a prompt belongs in it.
+\end{quote}
+
+HTTP offers three places to put data --- query string, headers, body --- and they are not
+interchangeable. The body is the container. The header is everything true about the
+\emph{message} rather than about the prompt. Had the depth gone in the body, every shape
+type in the repository would have acquired a field that means nothing to the game, and the
+shape types would have stopped being the containers' shapes, which is the one
+correspondence the whole exercise rests on.
+
+\subsection*{What a hop is, on the wire}
+
+\texttt{lib/delegate.ts} is forty lines and does one thing: it carries a JSON prompt to a
+port and prints the reply. It knows nothing about the game, nothing about containers, and
+nothing about what any of the fields mean.
+
+\begin{lstlisting}[language=SH]
+$ deno run --quiet --allow-net --allow-env \
+    lib/delegate.ts 8804 '{"tag":"Census"}' 0
+{"workforce":{"fields":0,"drivers":0,"mill":0,"rail":0,"dead":0},
+ "stocks":{"railCapacity":0},"trueOutput":0}
+\end{lstlisting}
+
+The three channels are kept strictly apart, and you can check it:
+
+\begin{lstlisting}[language=SH]
+$ deno run ... lib/delegate.ts 8804 'garbage'          0 ; echo $?    # 2
+$ deno run ... lib/delegate.ts 9999 '{"tag":"Census"}' 0 ; echo $?    # 1
+$ deno run ... lib/delegate.ts                            ; echo $?    # 2
+\end{lstlisting}
+
+The first is a prompt that is not JSON and the third is no arguments at all --- both
+\texttt{2}. The second is a well-formed prompt fired at a port with nothing behind it ---
+\texttt{1}. So there are two exits from failure and they mean \emph{different} things:
+\texttt{2} means \emph{you} were wrong, \texttt{1} means the world was.
+
+Every diagnostic goes to descriptor~2, and descriptor~1 carries the reply and nothing else.
+That is what lets the caller parse the whole of stdout as one JSON document without stripping
+anything off it first. The comment in the source says it in a line: \emph{stdout is the reply
+and nothing else, so the parent can JSON.parse it whole.}
+
+The same discipline is what makes the tracing work. \texttt{lib/wire.ts} writes its
+\texttt{↓}/\texttt{↑} trace to stderr:
+
+\begin{lstlisting}[language=TS]
+export function trace(depth: number, dir: "down" | "up", who: string, what: string) {
+  const line = `${"  ".repeat(depth)}${dir === "down" ? "↓" : "↑"} ...`;
+  Deno.stderr.writeSync(enc.encode(line));   // stdout stays pure JSON
+}
+\end{lstlisting}
+
+So a running game narrates itself on descriptor~2 while descriptor~1 stays machine-readable.
+The block below is assembled from the five servers' separate logs; with their stderr inherited
+instead, the children's trace lines join the parent's directly.
+
+\begin{lstlisting}[style=trace]
+ ↓ gosplan   Sow order={"procurement":"firm","labour":{"…
+   ↓ gosplan   ((agri (x) smelter) (x) transport)
+     ↓ agri      Harvest workforce={"fields":100,...} tractors=0 year=1928
+     ↑ agri      {grain, grade, perWorker, withoutTractors}
+     ↓ industry  Smelt workers=12 millCapacity=8 year=1928
+     ↑ industry  {steel, idleCapacity}
+ ↑ gosplan   {kind, year, harvest, steel, …}
+\end{lstlisting}
+
+Indentation is the depth counter; \texttt{↓} is control flowing down and \texttt{↑} is data
+flowing back up. You are reading the derivation tree of a container morphism, printed by a
+program that had no idea it was doing that.
+
+\subsection*{JSON, and what it throws away}
+
+JSON has six types: objects, arrays, strings, numbers, booleans, null. That is the whole
+grammar, and the omissions are what matter at a typed boundary.
+
+\begin{itemize}
+\item \textbf{No sum types.} A constructor becomes a string field by convention. The
+      \texttt{"tag"} in every prompt is that convention, and it is \emph{a claim, not a
+      fact}: nothing in the wire format prevents \texttt{\{"tag":"Haul"\}} with no other
+      field, which is exactly the 400 above.
+\item \textbf{No functions.} This one bites structurally. The shape of $\lhd$ is a
+      dependent pair whose second component is a function
+      \texttt{(r: PA) => SB} --- and a function cannot be serialised. So sequential
+      composition is necessarily resolved \emph{above} the wire, in the runner, which
+      prompts the first container and applies \texttt{next} to the reply to obtain the
+      second prompt. Only the two ground prompts ever cross. The wire format is not neutral
+      about which combinators can be distributed.
+\item \textbf{One number type,} IEEE 754 double. Grain and steel are tonnages, so this is
+      fine here, and it would not be fine for money.
+\item \textbf{No distinction between absent and null,} and no schema of any kind.
+\end{itemize}
+
+Hence the shape of every crossing, in both directions: \texttt{unknown} in, and a witness
+required before anything else may happen. Which is \S4.
+
+\subsection*{Statelessness, and where this repository is not stateless}
+
+\texttt{stalin} does not build the sessions-on-top-of-cookies machinery described above; it keeps the state in the process, at module
+scope:
+
+\begin{lstlisting}[language=TS]
+let seed  = Number(Deno.env.get("STALIN_SEED") ?? "1928");
+let books = new Books("Narkomput", seed + 4, 0.4, 0.92);
+let laid  = 0;
+let lastQuota = 0;
+\end{lstlisting}
+
+This is a deliberate and defensible choice --- a commissariat \emph{is} a stateful thing,
+and the point of the exercise is the container algebra, not session management --- but be
+clear about the consequence, because it is a real one. The protocol cannot clear that
+state, so clearing it has to become a move in the game:
+
+\begin{lstlisting}[language=TS]
+Reset: (p) => { seed = p.seed; books = new Books(...); laid = 0; lastQuota = 0;
+                return { ok: true }; },
+\end{lstlisting}
+
+\texttt{Reset} is a prompt with no in-fiction meaning; no plan resets a railway. It exists
+because \texttt{stalin new} must reach the commissariats, or the weather stream and the
+books carry over into the next game --- a bug the comment records as having actually
+happened. Determinism on the seed is what makes a playthrough a regression test, so this is
+load-bearing. The general lesson: when process state substitutes for protocol state, the
+lifecycle leaks into the interface.
+
+\section{TypeScript, event handlers, and servers}
+
+\subsection*{What TypeScript is, exactly}
+
+TypeScript is a structural type system over JavaScript that is \emph{erased}. Types are
+checked at compile time and then deleted; the emitted program has no representation of them
+and no run-time check derived from them. There is no reflection to fall back on. A cast is
+therefore not a coercion --- it is an unchecked assertion, a promise to the compiler that
+the compiler does not verify and the runtime cannot.
+
+That single fact determines the shape of every boundary in this codebase. On the inside,
+the checker is strong enough to do real work. A conditional type over a finite union
+\emph{computes} which decisions exist in each case --- here, which export decisions the
+harvest permits:
+
+\begin{lstlisting}[language=TS]
+type ExportChoice<G extends HarvestGrade> =
+  G extends "failure"  ? "none"
+: G extends "poor"     ? "none" | "surplus"
+: G extends "adequate" ? "none" | "surplus" | "full"
+:                        "none" | "surplus" | "full" | "maximum";
+
+exportPlan("bumper",  "maximum")   // fine
+exportPlan("failure", "maximum")   // does not compile
+\end{lstlisting}
+
+Exporting grain during a failed harvest is not a move the engine rejects. It is a move that
+cannot be written down. On the outside, at the wire, the checker contributes exactly nothing, because everything arriving is \texttt{unknown} and the
+checker went home before the process started.
+
+\subsection*{Servers: the runtime owns the loop}
+
+\texttt{Deno.serve} takes a handler and supplies everything else --- the socket, the accept
+loop, the parsing, the concurrency:
+
+\begin{lstlisting}[language=TS]
+Deno.serve({ port: opts.port }, async (req) => { ... return response; });
+\end{lstlisting}
+
+You write $(\text{Request}) \to \text{Promise}\langle\text{Response}\rangle$ and the
+runtime calls it once per request. This is what ``event handler'' means operationally:
+inversion of control, with the loop on the far side of the library boundary.
+
+But --- and this is the \S1 point returning --- the loop is not what makes it event-driven
+in the sense that matters. The CLI in \texttt{stalin.ts} has no loop at all and is
+event-driven in the same sense. What both have is a response type indexed by the prompt.
+The loop is scheduling; the indexing is the type.
+
+\subsection*{The handler table is the dependent function}
+
+Here is the pattern used in all five commissariats, from \texttt{transport.server.ts}. The
+prompt type is a tagged union --- a finite shape type:
+
+\begin{lstlisting}[language=TS]
+export type TrPrompt =
+  | { tag: "Lay";    workers: People; steel: Steel; year: number }
+  | { tag: "Haul";   railCapacity: number; available: Grain;
+                     needIndustry: Grain; offerPort: Grain; year: number }
+  | { tag: "Report"; year: number }
+  | { tag: "Census" }
+  | { tag: "Reset";  seed: number };
+
+export interface TrResponses {
+  Lay: RailReport;  Haul: HaulReport;  Report: Dispatch;
+  Census: CensusReturn;  Reset: ResetAck;
+}
+type Reply<K extends TrPrompt["tag"]> = TrResponses[K];
+\end{lstlisting}
+
+\texttt{TrResponses} \emph{is} $R : P \to \mathrm{Type}$, written as a record because the
+index is finite. And then the program $(p : P) \to R\,p$ is a record too:
+
+\begin{lstlisting}[language=TS]
+type Handlers = { [K in TrPrompt["tag"]]: (p: Extract<TrPrompt, { tag: K }>) => Reply<K> };
+
+const handlers: Handlers = {
+  Lay:  (p) => { ... return { added, steelUsed }; },
+  Haul: (p) => { ... return { toIndustry, toPort, stranded, short }; },
+  ...
+};
+\end{lstlisting}
+
+Three properties are worth pausing on, because this is the idiom to internalise:
+
+\begin{enumerate}
+\item \textbf{Each branch is checked against its own fibre.} Inside \texttt{Haul}, \texttt{p}
+      is the \texttt{Haul} member and the return type is \texttt{HaulReport}. Not a union,
+      not a widened supertype --- the one type indexed by that tag.
+\item \textbf{Totality is structural.} Add a member to \texttt{TrPrompt} and the object
+      literal stops satisfying \texttt{Handlers}. There is no default case to fall through
+      and no runtime dispatch to forget. Exhaustiveness is a property of the mapped type,
+      not of anyone's diligence.
+\item \textbf{Ordinary code, dependent shape.} No dependent types were harmed. This works
+      because the index is a finite union of string literals, over which conditional and
+      mapped types distribute --- the same observation that makes \texttt{lib/algebra.ts}
+      possible, where a container is presented as its graph, $\Sigma(s{:}S).\,B\,s$ as the
+      union of its fibres. What it costs is a \texttt{next} that branches between
+      \emph{different} second shapes: such a function has a union return type, lies in no
+      single fibre, and cannot be written in this encoding at all.
+\end{enumerate}
+
+\subsection*{The one cast, and why it is there}
+
+Applying the table needs a cast, and the codebase confines it to three lines:
+
+\begin{lstlisting}[language=TS]
+function answer<P extends TrPrompt>(p: P): Reply<P["tag"]> {
+  const h = handlers[p.tag] as (q: TrPrompt) => Reply<P["tag"]>;
+  return h(p);
+}
+\end{lstlisting}
+
+This is the well-known correlated-union limitation: TypeScript will not see that
+\texttt{handlers[p.tag]} and \texttt{p} are correlated through the same tag, so it types the
+lookup as a union of functions and the argument as a union of parameters, and refuses the
+application. The cast asserts the correlation that the mapped type already established one
+declaration earlier. It is unchecked, and it is safe for a reason you can state: every
+entry of \texttt{handlers} was individually checked at its own fibre when the literal was
+written. Note the discipline --- one cast, at a place where the invariant is provable, not
+scattered through the handlers.
+
+\subsection*{The seam: validate, do not cast}
+
+Now the boundary, which is the most important twenty lines in the repository. Types die at
+the wire. Something must witness them back into existence, and the only honest witness is
+code that looks at the fields.
+
+\begin{lstlisting}[language=TS]
+export function parseTr(u: unknown): TrPrompt | null {
+  if (!isRecord(u) || !isStr(u.tag)) return null;
+  switch (u.tag) {
+    case "Haul":
+      return isNum(u.railCapacity) && isNum(u.available) && isNum(u.needIndustry) &&
+             isNum(u.offerPort) && isNum(u.year)
+        ? { tag: "Haul", railCapacity: u.railCapacity, available: u.available,
+            needIndustry: u.needIndustry, offerPort: u.offerPort, year: u.year }
+        : null;
+    ...
+    default: return null;
+  }
+}
+\end{lstlisting}
+
+Four things are being done deliberately here.
+
+\textbf{The signature is the whole design.} \texttt{unknown → TrPrompt | null}. Not
+\texttt{any}, which would let the ill-typed value spread silently; \texttt{unknown}, which
+the compiler will not let you touch until you have narrowed it.
+
+\textbf{Refusal is a value, not an exception.} \texttt{null} means ``this was not a
+prompt''. The caller in \texttt{serveContainer} turns it into the 400 of \S3. An exception
+would have conflated it with the 500, which is the distinction the status codes exist to
+draw.
+
+\textbf{The tag is checked, not trusted.} \texttt{u.tag === "Haul"} says the sender claims
+this is a \texttt{Haul}. The five \texttt{isNum} calls are what make it one. Everything
+arriving from outside is a claim rather than a fact, and that holds for
+your own five servers on localhost too, because the property you want is not ``my callers are
+honest'' but ``an ill-typed value cannot get past this line''.
+
+\textbf{The object is rebuilt, not passed through.} The returned literal names every field
+explicitly. Nothing extra rides along, and the returned value is a \texttt{TrPrompt} because
+it was \emph{constructed} as one, not because anyone asserted it.
+
+Replies coming back are validated the same way, by per-tag decoders in
+\texttt{lib/algebra.ts}:
+
+\begin{lstlisting}[language=TS]
+export type Decoders<C extends Cont> = {
+  [K in TagOf<Shape<C>>]: (u: unknown) => PosAt<C, Extract<Shape<C>, { tag: K }>> | null;
+};
+\end{lstlisting}
+
+Same mapped-type idiom, pointed the other way: one decoder per shape, each checked against
+that shape's own position type. A leaf runs by delegating and then decoding, and throws if
+the reply does not validate. So both legs of every hop have a witness, and there is no
+direction in which an unchecked value enters the typed world.
+
+\subsection*{Three roles in one process}
+
+Finally, notice what a commissariat is. The same process:
+
+\begin{enumerate}
+\item \textbf{listens} --- \texttt{serveContainer} on its port;
+\item \textbf{calls} --- \texttt{fetch}, when its handler needs a lower level;
+\item \textbf{spawns} --- \texttt{new Deno.Command("deno", ...)}, because a hop is a process.
+\end{enumerate}
+
+That third role is also what makes the tower a tower rather than a star:
+gosplan is a client of agriculture, which may in turn be a client of something else, and the
+depth header counts the storeys. \texttt{await} is what joins the two directions --- control
+flowing down the stack of processes, data flowing back up --- and the indentation in the
+trace of \S1 is that stack, printed.
+
+\newpage
+\section*{Summary}
+
+One shape recurs at every level of this stack: \textbf{a prompt determines the type of its
+response}. What changes from level to level is only who enforces it.
+
+\begin{center}\small
+\begin{tabular}{llll}
+\toprule
+\textbf{Level} & \textbf{Prompt} & \textbf{Response} & \textbf{Enforced by} \\
+\midrule
+a pipe            & the bytes upstream        & the bytes downstream   & nobody \\
+a CLI tool        & the argument vector       & stdout + exit status   & a man page \\
+a syscall         & \texttt{read}/\texttt{write} on an \texttt{fd} & bytes, or an error & the kernel \\
+an HTTP request   & method, headers, body     & a status and a body    & the status code \\
+a handler         & a tagged prompt           & the reply at that tag  & the compiler \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The enforcement gets stronger as you read down that table, and it also gets narrower: the
+kernel checks everything and understands nothing, the compiler understands everything and
+checks only what never left the process. Neither end can be dispensed with, so the
+engineering is all in the handover, and there are two places in this repository where it
+happens.
+
+\begin{itemize}
+\item \texttt{lib/delegate.ts} is the handover from \S1 to \S3. A pipeline's untyped byte
+      stream becomes an HTTP request, and the discipline that makes it work is entirely
+      Unix's: one job, stdout is the reply and nothing else, stderr for narration, two
+      distinct exit codes for two distinct kinds of failure.
+\item \texttt{parse} is the handover from \S3 to \S4, and it is the important one.
+      \texttt{unknown → TrPrompt | null}: refusal is a value, the tag is checked rather
+      than trusted, and the prompt is rebuilt field by field rather than asserted. Nothing
+      ill-typed exists downstream of that line, and it is the only reason the mapped-type
+      machinery above it means anything at run time.
+\end{itemize}
+
+The type system's contribution is real but strictly local. It computes which moves exist in
+which case, and it makes a handler table total by construction, so a whole class of mistake
+becomes unwritable rather than merely untested. It contributes nothing at the wire, where
+everything arriving is \texttt{unknown} and the checker has already gone home. A single
+unvalidated cast at that boundary would forfeit every guarantee above it --- which is why
+there is exactly one cast in this codebase, three lines long, in a place where the invariant
+it asserts was established one declaration earlier.
+
+\end{document}
