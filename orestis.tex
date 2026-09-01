@@ -6,6 +6,26 @@
 \usepackage{xcolor}
 \usepackage[colorlinks=true,linkcolor=black,urlcolor=blue]{hyperref}
 \usepackage{parskip}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,fit,backgrounds,calc}
+
+\definecolor{ink}{HTML}{1A1A1A}
+\definecolor{grey}{HTML}{5F5B54}
+\definecolor{pale}{HTML}{F5F3EE}
+\definecolor{tensor}{HTML}{1F6F4A}
+\definecolor{seq}{HTML}{1F4E8C}
+\definecolor{prod}{HTML}{9C3B1B}
+
+\tikzset{
+  srv/.style={draw=ink, fill=white, rounded corners=2pt, inner sep=3.4pt,
+              font=\scriptsize\ttfamily, minimum height=5.6mm},
+  plan/.style={srv, fill=pale, font=\scriptsize\ttfamily\bfseries},
+  op/.style={circle, draw, inner sep=0.6pt, minimum size=6.4mm, font=\footnotesize\bfseries},
+  ar/.style={-{Stealth[length=1.8mm]}, semithick, color=grey},
+  lbl/.style={font=\tiny\itshape, color=grey},
+  capt/.style={font=\scriptsize\bfseries},
+  subt/.style={font=\tiny\itshape, color=grey},
+}
 
 \definecolor{kw}{RGB}{20,80,160}
 \definecolor{cmt}{RGB}{110,110,110}
@@ -962,15 +982,69 @@ the handovers, and there are three of them in this note.
 \texttt{stalin} is a resource-allocation game about the First Five-Year Plan. You are given the
 Soviet Union in 1928 and five years to industrialise it, and you must also win the war in 1941.
 
-Both are paid for in the same currency, and the chain is the whole game:
+Both are paid for in the same currency. What a year actually consists of is three decisions,
+and they have three different shapes:
 
-\begin{lstlisting}
-  grain --sell--> gold --hire--> engineers --> STEEL --+--> tractors --> more grain
-    ^                                                 |
-    |                                                 +--> railway --> throughput
-  peasants eat it -- and every one who starves        |
-  is also a soldier absent from the line in 1941      +--> armaments --> fewer soldiers die
-\end{lstlisting}
+\begin{center}
+\begin{tikzpicture}
+
+% --- SPRING: tensor ---
+\node[plan] (sow) {Sow};
+\node[lbl, above=1mm of sow] {spring};
+\node[op, draw=tensor, text=tensor] (t1) [right=14mm of sow] {$\boxtimes$};
+\node[srv] (agri)  [above right=8mm and 20mm of t1] {agriculture: Harvest};
+\node[srv] (mill)  [right=20mm of t1]               {industry: Smelt};
+\node[srv] (rail)  [below right=8mm and 20mm of t1] {transport: Lay};
+\draw[ar] (sow) -- (t1);
+\draw[ar] (t1) -- (agri);
+\draw[ar] (t1) -- (mill);
+\draw[ar] (t1) -- (rail);
+\begin{scope}[on background layer]
+\node[fit=(t1)(agri)(mill)(rail), draw=tensor, dashed, rounded corners=3pt,
+      inner sep=2.8mm, label={[capt, text=tensor, align=center]below:%
+      the tensor\\[-0.4mm]
+      {\normalfont\itshape\tiny three sectors, one year; all three must answer}}] {};
+\end{scope}
+
+% --- AUTUMN: seq ---
+\node[plan] (reap) [below=32mm of sow] {Reap};
+\node[lbl, above=1mm of reap] {autumn};
+\node[op, draw=seq, text=seq] (s1) [right=14mm of reap] {$\lhd$};
+\node[srv] (rail2) [right=18mm of s1]    {transport: Haul};
+\node[srv] (trade) [right=22mm of rail2] {trade: SellGrain};
+\draw[ar] (reap) -- (s1);
+\draw[ar] (s1) -- (rail2);
+\draw[ar] (rail2) -- (trade);
+\begin{scope}[on background layer]
+\node[fit=(s1)(rail2)(trade), draw=seq, dashed, rounded corners=3pt,
+      inner sep=2.8mm, label={[capt, text=seq, align=center]below:%
+      sequential composition\\[-0.4mm]
+      {\normalfont\itshape\tiny what you may sell is decided by what the railway moved}}] {};
+\end{scope}
+
+% --- PRODUCT ---
+\node[op, draw=prod, text=prod] (p1) [below=30mm of s1] {$\times$};
+\node[srv] (tract) [above right=7mm and 24mm of p1] {industry: BuildTractors};
+\node[srv] (arms)  [below right=7mm and 24mm of p1] {industry: BuildArmaments};
+\draw[ar] (reap) |- (p1);
+\draw[ar] (p1) -- (tract);
+\draw[ar] (p1) -- (arms);
+\begin{scope}[on background layer]
+\node[fit=(p1)(tract)(arms), draw=prod, dashed, rounded corners=3pt,
+      inner sep=2.8mm, label={[capt, text=prod, align=center]below:%
+      the product\\[-0.4mm]
+      {\normalfont\itshape\tiny both are asked; exactly one answers, because there is one stock of steel}}] {};
+\end{scope}
+
+\end{tikzpicture}
+\end{center}
+
+Read the three captions and you have the game. In spring everything happens at once and
+everything owes a report. In autumn the second question depends on the answer to the first ---
+you cannot know what you may sell until the railway has told you what it moved. And the last
+decision is a genuine choice rather than a division: the steel goes to tractors or to armaments,
+never partly to each. The names for those three shapes come later; the shapes themselves are
+what the game is.
 
 A year is two turns, and the split is the point. In \emph{spring} you fix where the hands go and
 how hard the villages are squeezed --- \emph{before} you know the weather. In \emph{autumn} the
