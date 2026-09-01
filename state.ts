@@ -77,6 +77,13 @@ export const RULES = {
   railSteelCost: 0.5,     // ...costing this much steel per capacity unit
 
   tractorSteel: 2.0,
+  /** What a tonne of steel is worth as armaments. Not a tonne: guns need
+   *  tooling, machining and swarf, and an ingot is not a rifle. At one to one
+   *  a plan that spent only its last two years arming still ended lavishly
+   *  equipped, and the war cost it nothing — which is not what being short of
+   *  steel is supposed to feel like. */
+  armamentYield: 0.5,
+
   /** The steel the plan has already promised elsewhere — rail upkeep and the
    *  tractor works — against which a stock is judged deficit, balanced or
    *  surplus. It is what makes 1928 an importing year: you begin below it, so

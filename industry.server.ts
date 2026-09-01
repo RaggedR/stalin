@@ -63,9 +63,11 @@ const handlers: Handlers = {
   // Armaments return nothing. No grain, no throughput, no gold. They are only
   // worth anything if 1941 happens — which is the point.
   BuildArmaments: (p) => {
-    const put = round(Math.max(0, p.steel));
+    const used = round(Math.max(0, p.steel));
+    // An ingot is not a rifle. Half of it goes in swarf and tooling.
+    const put = round(used * RULES.armamentYield);
     reserved += put;
-    return { reserved: put, steelUsed: put };
+    return { reserved: put, steelUsed: used };
   },
 
   Report: (p) => books.record(p.year, lastQuota, lastSteel),

@@ -63,9 +63,9 @@ The Fordsons came in by the thousand before Stalingrad opened.
 
 | strategy | starved | fallen | **total dead** | war |
 |---|---|---|---|---|
-| tractors, then armaments | 0 | 14 | **14** | won |
-| tractors only, never armed | 0 | 25 | **25** | won |
-| strip the villages, all armaments | 53 | 8 | **61** | won |
+| tractors, then armaments | 0 | 16 | **16** | won |
+| armed only in the last year | 0 | 60 | **60** | lost |
+| strip the villages, arm throughout | 59 | 5 | **64** | won |
 | build nothing | 0 | 60 | **60** | lost |
 
 Three of those win. **The two orderings disagree**: ranked by soldiers dead the
