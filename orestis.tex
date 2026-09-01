@@ -1490,5 +1490,54 @@ playthrough a regression test, so this is load-bearing rather than tidying. And 
 is the one worth taking away: when process state substitutes for protocol state, the lifecycle
 leaks into the interface.
 
+\section*{Conclusion}
+
+What has been built is a \emph{fake}. Ghani's container combinators are a construction in
+dependent type theory, and TypeScript has no dependent types. Nothing here added them. What the
+game does instead is impersonate the construction with two ordinary things: command-line tools,
+and \texttt{async} event handlers.
+
+The impersonation has three parts, and each one has appeared above.
+
+A container $(P, R)$ becomes a tagged union together with a lookup indexed by its tags. That
+works, and works only, because the tag set is \emph{finite}: over a finite index a dependent
+type is just a table, and a table is something TypeScript can write down.
+
+The inhabitant $(p : P) \to R\,p$ becomes the handler record, whose totality the compiler
+enforces because it is a mapped type over that same union.
+
+And a morphism becomes an \texttt{async} function --- which is where the two directions meet:
+
+\begin{lstlisting}[language=TS]
+const reply = await lower.run(u(prompt));   // the prompt, going down
+return f(prompt, reply);                    // the response, coming back
+\end{lstlisting}
+
+\subsection*{The response flows backwards}
+
+That is the part worth dwelling on. Control flows \emph{down}: a handler is woken by a prompt,
+computes a lower-level prompt with $u$, and fires it --- which in this implementation means
+spawning a process and opening a socket, so the descent is a real one, made of real programs.
+Then it stops. At the \texttt{await} the handler suspends, hands the runtime back, and the
+runtime is free to wake other handlers while it waits.
+
+The response then flows \emph{backwards} along the path the prompt took. Each reply resumes the
+handler that fired the prompt, at the very line it stopped on, and that handler applies $f$ to
+turn the reply into its own. So $u$ runs on the way down and $f$ on the way back up, in one
+function body, read top to bottom, with the suspension between them invisible in the text.
+
+The arrows in the trace are exactly this: \texttt{↓} is a prompt descending as a process,
+\texttt{↑} is a response climbing back as a resumed function. It is also why a server here can
+be a client without ceasing to be a server --- the Plan sits mid-answer with four prompts
+outstanding beneath it, still listening, because suspending is not the same as being busy.
+
+And where the fake fails, it fails visibly. Sequential composition cannot be sent over the wire,
+because its shape contains a function and functions do not serialise. A validated reply is
+guaranteed to have the right shape and is guaranteed nothing about its truth. Both limits are
+consequences of the same substrate that made the impersonation possible in the first place, which
+is the honest summary of the whole exercise: the algebra is real, and everything holding it up is
+Unix.
+
 \end{document}
+
 
