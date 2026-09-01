@@ -99,6 +99,37 @@ notes are just as much for myself as for anybody else.
 \end{center}
 \vspace{1mm}
 
+\section*{Introduction}
+
+Neil Ghani's \emph{Containers for Typed Agentic AI} describes an algebra: an interface is a pair
+--- the prompts you may send, and, \emph{for each prompt}, the type of reply that would answer
+it --- and such interfaces compose, in four different ways. It is a construction in dependent
+type theory. TypeScript has no dependent types.
+
+This note is about faking it anyway, and the claim it makes is that the fake is good enough to
+run a game on. Two ordinary things do the work: command-line tools, and \texttt{async} event
+handlers. Neither is exotic. Both have been in daily use for decades by people who have never
+heard of a container.
+
+Here is the part worth reading for. When one level of the game asks the level below it a
+question, the question travels \emph{downwards} as a real process: a program is started, a
+socket is opened, and the asking program then stops in the middle of a line and hands the
+machine back. When the answer arrives, it travels \emph{backwards} up the same path, and each
+program resumes at the exact line it stopped on, with the reply in hand. Control down, data back
+up --- which is precisely the shape the algebra says a morphism has, and it is one keyword,
+\texttt{await}, doing all of it.
+
+That is the destination, and it is why the route is long. The fake is made of Unix and of HTTP,
+so those come first: what a process is, what a file descriptor is, what the shell actually does
+with a line you type, what an HTTP status code is for, and what a type system can and cannot
+promise about a value that arrived over a wire. None of it is difficult and none of it is
+assumed --- every idea gets one subsection and one small example, and nothing is used before it
+has been introduced. Then the game, then the algebra, then the two put together.
+
+The reward at the end is a five-server program in which \emph{choosing which combinator to use
+is itself a game mechanic}, and in which the fake fails in exactly two places --- visibly, and
+for reasons worth knowing.
+
 \section{The Unix philosophy, pipes, and CLI tools}
 
 In case the reader is a little rusty, we begin with a brief review of the Unix this note
