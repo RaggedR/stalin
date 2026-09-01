@@ -491,8 +491,7 @@ do with the game; it exists so that each point can be made on its own.
 
 HTTP is a request/response protocol. A client sends a request; a server sends a response;
 nothing else happens. Here is one complete exchange, with \texttt{curl} showing both halves ---
-the lines it sent marked \texttt{>} and the lines it received marked \texttt{<}. The
-\colorbox{hdrbg}{headers} are on a blue ground and the \colorbox{bdybg}{body} on a green one:
+the lines it sent marked \texttt{>} and the lines it received marked \texttt{<}:
 
 \begin{center}
 \colorbox{codebg}{\begin{minipage}{0.95\linewidth}\ttfamily\small
@@ -509,9 +508,6 @@ the lines it sent marked \texttt{>} and the lines it received marked \texttt{<}.
 \vspace{1mm}
 \end{minipage}}
 \end{center}
-
-There is one body, not two: the \texttt{GET} had nothing to send, so its message ends at the
-blank line.
 
 That is the whole protocol in one screen. A request is a \emph{method} (\texttt{GET}), a
 \emph{path} (\texttt{/books/1}), some \emph{headers}, and optionally a \emph{body}. A response
