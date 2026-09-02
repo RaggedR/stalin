@@ -5,7 +5,8 @@
 \usepackage{array}
 \usepackage{listings}
 \usepackage{xcolor}
-\usepackage[colorlinks=true,linkcolor=black,urlcolor=blue]{hyperref}
+\definecolor{seclink}{HTML}{1F4E8C}
+\usepackage[colorlinks=true,linkcolor=seclink,citecolor=seclink,urlcolor=blue]{hyperref}
 \usepackage{parskip}
 \usepackage{tikz}
 \usetikzlibrary{positioning,arrows.meta,fit,backgrounds,calc}
@@ -69,6 +70,17 @@
 
 % Keep every code block whole: wrapping each listing in an unbreakable minipage
 % makes LaTeX move it to the next page rather than split it across one.
+\usepackage[most]{tcolorbox}
+\definecolor{yellowbg}{HTML}{FCF6DC}
+\tcbset{plainbg/.style={breakable, enhanced, sharp corners, boxrule=0pt, frame hidden,
+  parbox=false,
+  before upper={\setlength{\parskip}{0.55\baselineskip}\setlength{\parindent}{0pt}},
+  left=4mm, right=4mm, top=3mm, bottom=3mm, before skip=3mm, after skip=3mm}}
+\newtcolorbox{listbox}{plainbg, colback=black!5}
+\newtcolorbox{orestisbox}{plainbg, colback=hdrbg}
+\newtcolorbox{sectionbox}{plainbg, colback=yellowbg}
+\newtcolorbox{pinkbox}{plainbg, colback=linebg}
+
 \usepackage{etoolbox}
 \BeforeBeginEnvironment{lstlisting}{\par\vspace{0.4\baselineskip}\noindent\begin{minipage}{\linewidth}}
 \AfterEndEnvironment{lstlisting}{\end{minipage}\par\vspace{0.4\baselineskip}}
@@ -113,6 +125,7 @@ combinators, so these notes are just as much for myself as for anybody else.
 
 \section*{Introduction}
 
+\begin{sectionbox}
 Neil Ghani's \emph{Containers for Typed Agentic AI} describes an algebra of interfaces. An
 interface is a pair. The first half is the prompts you may send. The second half gives, for each
 prompt, the type of reply that would answer it. Such interfaces compose, in four different ways,
@@ -151,23 +164,20 @@ implemented with TypeScript \texttt{async} event handlers. Each TypeScript \text
 handler ``hangs'' on the result of the next TypeScript \texttt{async} event handler in the chain.
 When a ``leaf'' at the end of the chain finally evaluates to an actual response, this response
 ``propagates backwards'' up the chain of TypeScript \texttt{async} event handlers.
+\end{sectionbox}
 
-\section{The Unix philosophy, pipes, and CLI tools}
+\newpage
+
+\section{The Unix operating system, pipes, and CLI tools}
 \label{sec:unix}
 
-In case the reader is a little rusty, we begin with a brief review of the Unix this note leans
-on. What a process is. How one reaches the world outside itself. How two of them are joined
-together. Why a command-line tool has the shape it has. None of this is specific to the game
-\texttt{stalin}. All of it is used by the game. The game comes later, once the concepts are in
-place.
+In case you are a little rusty we review some basic ideas about the Unix operating system. This
+might be useful to Neil.
 
-Each part below introduces one idea and, where it helps, one small example that illustrates
-only that idea. Nothing is used before it has been introduced.
-
-\subsection*{A process}
+\subsection{A process}
 
 A \emph{process} is one running program, together with everything the kernel keeps on its
-behalf. Its memory. Its position in the code. Its identity, meaning which user it runs as. And a
+behalf. Its memory. Its position in the code. Its identity -- meaning which user it runs as. And a
 number.
 
 A program is a file sitting on a disk, and does nothing. A process is that file in motion. Run the
@@ -176,19 +186,27 @@ same program twice and you have two processes. They share nothing and cannot see
 The number is the process's \emph{pid}. It is how anything outside the process refers to it, and
 there is no other handle. To stop a program you send a signal to its pid.
 
-\subsection*{User space and kernel space}
+Every process has a parent. The kernel is not a process. At boot it creates the first process, and
+that first process launches all the others.
 
-A running machine is divided in two. Your code executes in \emph{user space}, where it may
-compute freely and touch nothing. It cannot address a disk, a network card, or another process's
-memory. The processor is in a mode that forbids it. The \emph{kernel} executes in kernel space,
-where it may touch everything. The division is enforced by the hardware, not by convention.
+On my MacBook Air the first process is called \texttt{launchd}. On Linux it is \texttt{init} or
+\texttt{systemd}. Its own parent is given as 0, which is not a real process.
+
+\subsection{User space and kernel space}
+
+A running machine is divided in two. Your code executes in \emph{user space}. There it may do
+arithmetic, compare values, jump from one place in its own code to another, and read and write the
+memory that belongs to it. That is the whole of what it may do. It cannot address a disk, a network
+card, or another process's memory. The physical processor is in a mode that forbids it. The \emph{kernel} executes
+in kernel space, where every device and every process's memory is addressable. The division is
+enforced by the hardware, not by convention.
 
 There is exactly one interface between the two. It is the \emph{system call}. It suspends your
-process, switches the processor into kernel mode, runs kernel code on your process's behalf, and
+process, switches the physical processor into kernel mode, runs kernel code on your process's behalf, and
 returns. Every effect a program has on the world outside its own memory is a system call. There is
 no other mechanism.
 
-\subsection*{\texttt{read} and \texttt{write}}
+\subsection{\texttt{read} and \texttt{write}}
 
 That interface could have been wide. It is in fact very narrow. The two calls that matter most
 are these:
@@ -202,10 +220,10 @@ Each takes a number identifying something already open, a place to put bytes or 
 and how many. Between them they are very nearly the whole interface to the outside world. What that
 number is, and where it comes from, is the subject of two subsections below.
 
-\subsection*{Everything is a file}
+\subsection{Everything is a file}
 
 Why should two calls be enough? Because of a design decision usually stated as a slogan.
-\textbf{Everything is a file.} A file on a disk, a terminal, a network connection, a source of
+``Everything is a file.'' A file on a disk, a terminal, a network connection, a source of
 random bytes. All of them are presented to user space through the same interface. So the same two
 calls reach all of them.
 
@@ -216,10 +234,11 @@ Once the thing exists and you are holding its number, \texttt{read} and \texttt{
 vocabulary. The uniformity is at the point of use. That is the point that matters, because using is
 where one program meets another.
 
-\subsection*{File descriptors}
+\subsection{File descriptors}
 
-That number is a \emph{file descriptor}. It is a small non-negative integer. It is an index into
-a table the kernel keeps for each process, whose entries point at the things that process has open.
+That number is a \emph{file descriptor}. It is a small non-negative integer. It is an index into the
+\emph{file descriptor table}, which the kernel keeps for each process, and whose entries point at
+the things that process has open.
 Nothing in the number says what kind of thing it is. The descriptor is an opaque handle. That is
 exactly why one program can be pointed at a file one day and at a network connection the next
 without being rewritten.
@@ -237,7 +256,7 @@ Start a program from a terminal and all three point at that terminal. That is wh
 complaints appear jumbled together in one scrolling window. It is a property of the terminal, not
 of the program.
 
-\subsection*{\texttt{cat}}
+\subsection{\texttt{cat}}
 
 Everything so far is enough to write a real Unix program. The program \texttt{cat} is named for
 \emph{concatenate}. It copies its input to its output, unchanged, and does nothing else. That is
@@ -259,37 +278,36 @@ or what \texttt{1} is attached to, because \texttt{read} and \texttt{write} prov
 A disk file, a keyboard, another program's output. The loop is identical and the program cannot
 tell the difference.
 
-\subsection*{\texttt{fork} and \texttt{exec}}
+\subsection{\texttt{fork} and \texttt{exec}}
 
 Two more system calls, and they are the two that make new processes.
 
 The call \texttt{fork} \emph{duplicates} the calling process. Where there was one process there are now
 two. They are identical in their memory, their open descriptors and their position in the code.
-They differ only in the value \texttt{fork} handed back. That is how each tells whether it is the
+They differ only in the pid \texttt{fork} handed back. That is how each tells whether it is the
 original or the copy.
 
 The call \texttt{exec} \emph{replaces} the program running inside a process. Same process, same pid, same
-descriptor table. But the old code and memory are discarded and a new program is loaded in their
+file descriptor table. But the old code and memory are discarded and a new program is loaded in their
 place.
 
 Neither is a ``run this program'' call, and that is the point. To start a program, a process
-\texttt{fork}s, and then the copy \texttt{exec}s. The descriptor table survives both, so the copy
+\texttt{fork}s, and then the copy \texttt{exec}s. The file descriptor table survives both, so the copy
 inherits the original's descriptors. And in the gap between the two calls the copy is still running
 the original's code, so it can rearrange its own table before replacing itself. Three subsections
 below turn on that gap.
 
-\subsection*{The shell}
+\subsection{The shell}
 
 The shell is not part of the kernel and has no privilege you do not have. It is an ordinary
-program running in user space with your identity, and its purpose is to start other programs. That
-is all it is. A program whose job is running programs. Two things it relies on come first, and then
-what it does with a line you have typed.
+process running in user space with your identity, and its purpose is to start other processes. That
+is all it is. A process whose job is starting other processes.
 
-\subsubsection*{The environment}
+\subsubsection{The environment}
 
 A process carries one more thing. Its \emph{environment} is a set of named strings held
-alongside its memory and its descriptor table. They are called variables, but they are only ever
-text. Like the descriptor table, the environment survives \texttt{fork} and \texttt{exec}. So a new
+alongside its memory and its file descriptor table. They are called variables, but they are only ever
+text. Like the file descriptor table, the environment survives \texttt{fork} and \texttt{exec}. So a new
 process starts with a copy of the one that started it.
 
 \begin{lstlisting}[language=SH]
@@ -302,7 +320,7 @@ That is the whole of it: named text, inherited downwards. The most used of them 
 \texttt{PATH}, which holds a list of directories; the shell searches them whenever it is
 looking for a program to run.
 
-\subsubsection*{Globbing}
+\subsubsection{Globbing}
 
 A word containing \texttt{*}, \texttt{?} or \texttt{[\,\ldots]} is a \emph{glob}: a pattern to
 be matched against the names of files that exist. The symbol \texttt{*} stands for any run of characters,
@@ -319,7 +337,7 @@ The command \texttt{echo} prints its arguments and nothing else. So what it prin
 given, namely three filenames. It never saw an asterisk. That is why every program accepts
 patterns, and why no program contains any code for matching them.
 
-\subsubsection*{What the shell does with a line}
+\subsubsection{What the shell does with a line}
 
 Given a line, the shell does five things, and every one of them has already been described.
 
@@ -343,11 +361,11 @@ shell's own state has to be part of the shell.
 A remark, because this is the mechanism behind something that catches people out with coding
 agents. Claude Code runs each shell command exactly as the shell runs a program. It forks, and the
 copy execs. A \texttt{cd} in that command changes the copy's working directory, and the copy then
-exits. So no command the agent runs can change the agent's. The directory it was launched in is
-the directory it has for the whole session. That is why you must start it in the project you
+exits. So no command the agent runs can change the agent's working directory. The directory it was
+launched in is the directory it has for the whole session. That is why you must start it in the project you
 actually mean to work on.
 
-\subsection*{Redirection}
+\subsection{Redirection}
 
 Now the gap between \texttt{fork} and \texttt{exec}. Writing \texttt{> log} after a command tells
 the shell to do one thing in the copy, before exec'ing. Open the file \texttt{log} and put it in
@@ -363,7 +381,7 @@ Writing \texttt{2> errs} redirects descriptor~2 in the same way. Nothing was add
 make this work. The command \texttt{echo} cannot discover that it happened. It wrote to descriptor~1 exactly as
 it always does. Redirection is the shell's syntax and the shell's doing, from beginning to end.
 
-\subsection*{Pipes}
+\subsection{Pipes}
 
 A \emph{pipe} is a buffer the kernel will hand out on request. It comes with two descriptors.
 One to write into, one to read out of. The symbol \texttt{|} is the same redirection as \texttt{>}, with a pipe
@@ -398,95 +416,77 @@ bytes as soon as \texttt{cat} has written them, and reports its first match from
 either program arranges for it not to. That is simply what two processes and one finite buffer
 do.
 
-\subsection*{Blocking, and what else could be running}
-\label{sec:blocking}
+\subsection{Threads}
+\label{sec:threads}
 
-The pipe example above contained a piece of concurrency without drawing attention to it. It is
-the seed of everything in §\ref{sec:async}. The programs \texttt{cat} and \texttt{wc} run \emph{at the same
-time}. When \texttt{wc}'s \texttt{read} finds the buffer empty, \texttt{wc} does not spin.
+The pipe in the previous subsection contained a piece of concurrency and did not draw attention to
+it. The programs \texttt{cat} and \texttt{wc} run at the same time. It is worth asking what that
+sentence can possibly mean. For this we need to understand threads.
 
-What happens is that the kernel marks the process \emph{not runnable} and gives the processor to
-somebody else. A blocked process consumes no CPU at all. It is simply not a candidate for
-scheduling until the thing it is waiting on becomes ready. Then the kernel makes it runnable again
-and it resumes inside \texttt{read}, as though the call had merely been slow. This is the default
-behaviour of nearly every system call that touches the world. It is why the programs in the
-previous subsections could be written as straight lines, with no mention of waiting anywhere in
-them.
+\textbf{The physical processor is handed out in slices.}
 
-Straight-line code that blocks is an excellent way to write \texttt{cat}. It is a bad way to write
-a server, and the reason is arithmetic. A server holds many conversations at once. Most of them are
-idle most of the time, waiting for the client's next request, or a disk, or another server. Suppose
-the code handling one conversation blocks, and blocking means the whole flow of control stops. Then
-one flow of control can serve one conversation.
+Assume the machine has one physical processor. It executes one instruction stream. It has no notion
+of a process. To run many processes on it the kernel keeps a set of flows of control it considers
+\emph{runnable}, and gives the physical processor to one of them. A hardware timer interrupts a few milliseconds later. The kernel saves
+that flow's registers and its position in the code, loads another's, and returns. The interrupted
+process is not asked and cannot tell.
 
-There are three ways out. They are worth naming, because the third one is the subject of two later
-sections.
+That is \emph{preemption}. The consequence to carry forward is a single sentence. A program's text
+does not mark the points at which it may be interrupted, because every point between two machine
+instructions is one.
 
-\textbf{A process per conversation.} Call \texttt{fork} on each connection. This was the original
-answer, and it is completely safe. The processes share no memory, so no conversation can corrupt
-another's state, and a crash costs one client. It is also the most expensive thing on the list. A
-process has its own address space. Creating one and switching to one both cost real work. Ten
-thousand of them is not a plan.
+\textbf{Blocking is the other way to lose the physical processor.}
 
-\textbf{A thread per conversation.} A \emph{thread} is a flow of control. A position in the code, a
-stack, a set of registers. Several of them can live inside one process, \emph{sharing that
-process's memory and its descriptor table}. The kernel schedules threads much as it schedules
-processes, and blocking is per-thread. One thread stuck in \texttt{read} leaves the others runnable.
-Threads are much cheaper than processes. They are not cheap. Each one needs a stack, typically
-measured in megabytes of reserved address space.
+When \texttt{wc}'s \texttt{read} finds the buffer empty, the kernel marks it \emph{not runnable}
+and gives the physical processor to somebody else.
 
-The real cost of threads is not memory. It is worth being exact about what it is, because this is
-the cost the third option is designed to avoid. Threads share memory, so two of them may touch the
-same variable at the same time. And the kernel may take the processor away from a thread
-\emph{between any two machine instructions}. So consider a sequence as innocent as
-\texttt{balance = balance - 1}. That is a read, a subtraction and a write. It can be interrupted
-after the read, and the value written back may be stale.
+A blocked process consumes nothing at all. It
+is not a candidate for scheduling until the thing it waits on becomes ready. Then the kernel makes
+it runnable again and it resumes inside \texttt{read}, as though that call had merely been slow.
 
-Preventing this requires locks. Locks acquired in inconsistent orders deadlock. None of it is
-visible in the text of the program. A data race is not a rare event that testing will find. It is a
-statement about every interleaving of every thread. That is exactly the kind of statement a reader
-of this note knows to be expensive to establish.
+This is the default behaviour of nearly every system call that touches the world. It is why the
+programs in the previous subsections could be written as straight lines, with no mention of waiting
+anywhere in them.
 
-\textbf{One thread that never blocks.} The third option keeps a single flow of control and removes
-the blocking instead. It rests on one more system call, whose shape is different from \texttt{read}
-and \texttt{write}.
+\textbf{What the kernel keeps on a process's behalf.}
 
-\begin{lstlisting}[language=SH]
-select(descriptors...)  -- of these, tell me which are ready now
-\end{lstlisting}
+The bookkeeping falls into two lists, and the difference between them is what this section is
+about.
 
-Given a set of descriptors, it answers with the subset on which a \texttt{read} or \texttt{write}
-would not block. The modern versions are called \texttt{epoll} on Linux and \texttt{kqueue} on the
-BSDs. The idea is \texttt{select}'s.
+The first list is what the process \emph{owns}. Its address space, meaning the tables that map the
+addresses appearing in its code to real memory. Its file descriptor table. Its identity -- meaning
+which user it runs as. Its pid.
 
-That one call is enough to invert the whole structure. There is no longer a flow of control per
-conversation, each stuck in its own \texttt{read}. There is one flow of control holding every
-conversation's descriptor at once, in a loop. Ask which are ready. Do the small piece of work each
-ready one has earned. Ask again. The loop never blocks on any particular conversation because it
-never commits to one. This is what \texttt{nginx} does, and Node, and Deno. It is why one process
-can hold tens of thousands of open connections on hardware that could not fork a hundred.
+The second list is what the kernel needs in order to \emph{run} it. Its position in the code, its
+registers, and its stack.
 
-Two consequences, and both matter later.
+Only the second list is required to give a process a slice of physical processor.
 
-The first is a gift. There is one thread. So between two points at which the loop regains
-control, \emph{nothing else runs}. No two pieces of your code ever execute at the same instant. No
-variable can be modified underneath you mid-computation. No lock is required anywhere. The
-concurrency is real, because many conversations are in progress. The parallelism is zero. That is
-precisely the trade. The thread-per-conversation design asks you to reason about every
-interleaving. This one hands you an atomicity guarantee for free.
+The first is what makes a
+process expensive. Creating one means building page tables. Switching from one to another means the
+physical processor's address-translation caches now describe the wrong process and must be refilled. The
+first list is also what isolates. Two processes cannot see each other because neither address space
+contains a mapping to the other.
 
-The second is the bill. \emph{Nothing in the handler may block.} Consider a single blocking call.
-One ordinary \texttt{read} on a slow disk, or one long arithmetic loop. It stops not that
-conversation but all of them, because there is only one flow of control and it is inside your
-function. So every operation that would have waited must instead be written in three parts. Start
-it. Give the loop back its thread. Arrange to be resumed when the answer arrives.
+\textbf{A thread is the second list on its own.}
 
-Writing that by hand is miserable, and for about twenty years everybody did. §\ref{sec:async} is
-about the language feature that makes it look like the straight-line code we started with. That
-feature is where the container morphism turns out to be hiding.
+A \emph{thread} is a flow of control. A position in the code, a set of registers, and a stack.
+Nothing else. Every process begins with exactly one thread, and may ask the kernel for more.
+Threads belonging to the same process share every item on the first list. They share one address
+space, so every variable one of them can reach, all of them can reach. They share one file
+descriptor table, so anything one of them opens is open for all of them. They share one identity
+and one pid. What they do not share is the second list. Each has its own position in the code, its
+own registers, and its own stack.
+
+The kernel schedules threads, not processes. Blocking is therefore per-thread. One thread stuck
+inside \texttt{read} leaves its siblings runnable, and that is the whole reason to want more than
+one.
+
+Threads are much cheaper than processes. All they need is their own stack, and a stack is
+typically only a few megabytes of reserved address space.
 
 
-\subsection*{Exit status, and the shell's control flow}
+\subsection{Exit status, and the shell's control flow}
 
 The small number a program leaves behind is what the shell builds its control flow on.
 
@@ -500,7 +500,7 @@ The small number a program leaves behind is what the shell builds its control fl
 We could say a good deal more about all this. It is not really relevant to the game
 \texttt{stalin}.
 
-\subsection*{Shell scripts}
+\subsection{Shell scripts}
 
 A file of such lines is a shell script, and running it is the same as having typed them. So a
 pipeline that worked once can be kept and named. And a script is started like any other program. It
@@ -508,7 +508,7 @@ is found on \texttt{PATH}, \texttt{fork}ed, \texttt{exec}ed, and its status coll
 can appear in a pipeline itself, on either side, and nothing that uses it needs to know it is a
 script.
 
-\subsection*{Three channels, not one}
+\subsection{Three channels, not one}
 
 Gather up what a program actually offers the world outside it. There are three separate
 channels, and they carry three different kinds of thing.
@@ -530,7 +530,7 @@ and nothing else. So whatever reads from a program receives its results, and nev
 out from error text. Putting results and narration both on descriptor~1 is the commonest way to
 make a program unusable in a pipeline.
 
-\subsection*{Manual pages, and what is not checked}
+\subsection{Manual pages, and what is not checked}
 
 None of the above is checked by anything. The interface between two programs is bytes. Any two
 can be joined. That is the strength. Nothing verifies that the composition means anything. That is
@@ -579,7 +579,7 @@ the log is clean and you will get a correct one. What you do need is the concept
 any of it together is ``developer discipline''. Somebody read the manual page. At this level of the
 stack that is the whole of the enforcement there is.
 
-\subsection*{The dictum}
+\subsection{The dictum}
 
 Let's summarise what we have. One uniform interface reached by \texttt{read} and \texttt{write}.
 Three separate channels. A pipe that joins one program to another. With that on the table, the
@@ -601,7 +601,7 @@ that reads a stream and writes a stream. Its input is not a dialogue. Its output
 a human. The programs \texttt{cat}, \texttt{wc} and \texttt{grep} are filters. That is why the examples above
 could be assembled without any of them having been designed for each other.
 
-\subsection*{A CLI tool is already a dependent function}
+\subsection{A CLI tool is already a dependent function}
 \label{sec:cli}
 
 One last observation, and it is the one this note turns on.
@@ -638,21 +638,42 @@ to the deficit as well, because that is what the four remaining layers are for. 
 $R$ that does not depend on $p$ and makes it depend on $p$ a little more, over a little less.
 §\ref{sec:enforcement} keeps the score.
 
-\section{The Claude Code harness}
+\newpage
 
-Claude Code is a CLI process. When it runs a command it does what the shell does. It
+\section{The Claude Code harness}
+\label{sec:harness}
+
+\begin{sectionbox}
+Claude Code is a CLI tool that executes other CLI tools. When it runs a command it does what the
+shell does. It
 \texttt{fork}s. The copy \texttt{exec}s. The copy inherits its parent's identity.
 
 That's it. It runs with the permissions of the user that executed it. It can read and write any
 file that user can read and write, and it can execute any command that user can execute.
 
-In production one would create a user with limited permissions and run the Claude Code executable
-as that user.
+As we already mentioned, Claude Code is itself just another CLI tool. This is worth stopping and
+reflecting upon. It is what makes this design so beautiful.
 
-This is the first enforcer, and the bluntest in the note. The kernel will not let a process read a
-file its user may not read. And it has no opinion whatever about whether the bytes in that file
-mean anything. Strong, and narrow. Everything above it trades some of that strength for the ability
-to say something about meaning.
+You run it with a prompt as its argument, and it answers on standard output.
+
+\begin{lstlisting}[language=SH]
+$ claude -p 'Reply with exactly the four words: this is a reply'
+this is a reply
+\end{lstlisting}
+
+Claude Code also calls other CLI tools. That is nearly the whole of what it does. It reads a
+prompt, decides which commands to run, forks and execs them, reads what they wrote, and answers.
+
+You can set him up with limited privileges, a handful of CLI tools that he has permission to
+operate and nothing else.
+
+Now think of him as a container. The prompts you may send are the things you may ask for. The reply
+you get back has a type that depends on which prompt you sent. And the interface is the list of
+tools he is permitted to use.
+\end{sectionbox}
+
+
+\newpage
 
 \section{HTTP and JSON}
 \label{sec:http}
@@ -667,7 +688,7 @@ arrangement, and it is all this section needs.
 The examples below all run against a toy server whose database is a list of books. It has nothing
 to do with the game. It exists to introduce TypeScript syntax.
 
-\subsection*{A request and a response}
+\subsection{A request and a response}
 
 HTTP is a request/response protocol. A client sends a request. A server sends a response. Nothing
 else happens. Here is one complete exchange, the request and the response.
@@ -692,7 +713,7 @@ That's it. A request is a \emph{method} (\texttt{GET}), a \emph{path} (\texttt{/
 \emph{headers} (blue), and optionally a \emph{body} (none in this example). A response is a
 three-digit \emph{status} (\texttt{200}), some headers (blue), and a body (green).
 
-\subsection*{Deliberately simple}
+\subsection{Deliberately simple}
 
 The designer of the HTTP protocol, Roy Fielding, made the same kind of design decision that Unix
 made. And it paid off. Just as every server in the world today runs Unix, every web app in the
@@ -700,7 +721,7 @@ world today communicates via HTTP.
 
 \newpage
 
-\subsection*{The method says what kind of thing you are doing}
+\subsection{The method says what kind of thing you are doing}
 
 There are four types of HTTP request. We only use two of them.
 
@@ -765,7 +786,7 @@ $ curl -X POST http://127.0.0.1:8099/books \
 {"id": 2, "title": "Permutation City", "author": "Greg Egan"}   -- 201 Created
 \end{lstlisting}
 
-\subsection*{JSON}
+\subsection{JSON}
 
 JSON is short for JavaScript Object Notation. It is a recursive text format for data. Just like
 HTTP it is deliberately simple. It has four types of ``atomic'' data: numbers, strings, booleans
@@ -777,24 +798,71 @@ value  ::=  string | number | boolean | null
          |  '{' (string ':' value)* '}'
 \end{lstlisting}
 
-\section{TypeScript, event handlers, and servers}
+\subsection{A request and a response, as values}
+\label{sec:respval}
+
+Everything above is text on a wire. Inside a TypeScript program the two halves of the exchange are
+ordinary values, and they have names. A \texttt{Request} is one arriving HTTP request. A
+\texttt{Response} is one outgoing HTTP response. Both are supplied by the runtime, so no library has to be installed to use them.
+
+A \texttt{Response} is built from the three things the exchange above already showed. A body, a
+status number, and a set of headers.
+
+\begin{lstlisting}[language=TS]
+const body = JSON.stringify({ id: 1 });      // the body, as a string
+
+const res = new Response(body, {
+  status: 200,
+  headers: { "content-type": "application/json" },
+});
+
+console.log("body   :", body);
+console.log("status :", res.status);
+console.log("header :", res.headers.get("content-type"));
+\end{lstlisting}
+
+\begin{lstlisting}[language=SH]
+$ deno run r.ts
+body   : {"id":1}
+status : 200
+header : application/json
+\end{lstlisting}
+
+The body is a string. To keep things simple, we will assume that the bodies of our requests and
+responses are well formed JSON. The status is the number whose meaning was given above. So constructing a
+\texttt{Response} is nothing more than writing down those three fields, and a server handler is a
+function that returns one.
+
+The body of a \texttt{Request} arrives on a socket. Getting it means a \texttt{read}, and
+\S\ref{sec:threads} said what a \texttt{read} does when nothing is there yet. It blocks. That is
+true however small the body is. A server may not block, so it cannot simply wait.
+Section~\ref{sec:async} is about what it does instead.
+
+\newpage
+
+\section{TypeScript syntax}
 \label{sec:ts}
 
-We do not assume that you are familiar with the syntax for TypeScript. It is an unfortunate
-accident of history that JavaScript became the ``default'' language for web app development.
-TypeScript is an unfortunate attempt to ``bolt on'' a type system to JavaScript after the event.
-It is a bit of a head twister, and it bears almost no resemblance to Haskell or Lean.
+\begin{sectionbox}
+It is an unfortunate accident of history that JavaScript became the ``default'' language for web
+app development. TypeScript is an unfortunate attempt to ``bolt on'' a type system to JavaScript
+after the event.
 
-\subsection*{The syntax}
+This is a ``crash course'' in TypeScript, and I am also learning as I write here. It is a bit of a
+head twister, and it bears almost no resemblance to Haskell or Lean.
+\end{sectionbox}
+
+\subsection{Basic types}
 \label{sec:tssyntax}
 
+\begin{listbox}
 \begin{itemize}\setlength{\itemsep}{2pt}
 
 \item The atomic types are \texttt{number}, \texttt{string}, \texttt{boolean}, \texttt{null} and
       \texttt{undefined}.
 
-\item A string in quotes may be used as a \emph{type}. The type \texttt{"failure"} has exactly
-      one inhabitant, namely that one string.
+\item A string in quotes may be used as a type. The type \texttt{"failure"} has exactly one
+      inhabitant, namely that one string.
 
 \item The type \texttt{never} has no inhabitants at all.
 
@@ -802,30 +870,51 @@ It is a bit of a head twister, and it bears almost no resemblance to Haskell or 
       untagged union.
 
 \item The type \texttt{\{ id: number; title: string; author: string \}} is a \emph{record}. A
-      value of it is a dictionary in the Python sense, with those three keys. This one is the
-      type of a book, and the note gives it the name \texttt{Book}.
+      value of it is a dictionary in the Python sense, with those three keys. In our running
+      example this is the type of a book, and the note gives it the name \texttt{Book}.
 
 \item The list type can be written using two different notations. \texttt{Array<Book>} and
       \texttt{Book[]} both mean the same thing, a list whose elements are all books. It is
       easier to see from the first notation that this is one type taking another type as an
       argument.
 
-\item The type \texttt{Record<string, unknown>} is a dictionary again, but this time with
-      arbitrary keys and nothing at all known about the values.
+\item The signature \texttt{<T, R>(x: T) => R} is a generic function.
+
+\end{itemize}
+\end{listbox}
+
+\subsection{The weird stuff}
+
+\begin{listbox}
+\begin{itemize}\setlength{\itemsep}{2pt}
 
 \item The type \texttt{unknown} is a value about which nothing is known. Nothing may be done to
       it until you have established what it is.
+
+\item The type \texttt{Record<string, unknown>} is a dictionary again, but this time with
+      arbitrary keys and nothing at all known about the values.
 
 \item The keyword \texttt{any} switches the type checker off for that value entirely.
 
 \item The notation \texttt{u as T} says ``trust me, this is a \texttt{T}''. This is very
       upsetting for somebody in formal verification. It is called a \emph{type assertion}.
 
-\item The signature \texttt{<T, R>(x: T) => R} is a generic function.
+\end{itemize}
+\end{listbox}
+
+\newpage
+
+\subsection{Subtypes}
+
+\begin{listbox}
+\begin{itemize}\setlength{\itemsep}{2pt}
 
 \item In TypeScript we can talk about one type being a \emph{subtype} of another. For example
       the type \texttt{"failure"} is a subtype of \texttt{string}. Every type is a subtype of
       \texttt{unknown}, and \texttt{never} is a subtype of every other type.
+
+\item The type \texttt{Extract<Q, S>} keeps only those members of the union \texttt{Q} that are
+      subtypes of \texttt{S}, and throws the rest away.
 
 \item The notation \texttt{Book[K]} tells you the type of the value stored at field \texttt{K}
       of the record type \texttt{Book}. It is called an \emph{indexed access type}. So
@@ -835,6 +924,14 @@ It is a bit of a head twister, and it bears almost no resemblance to Haskell or 
 
 \item The constraint \texttt{K extends U} says that \texttt{K} must be a subtype of \texttt{U}.
 
+\end{itemize}
+\end{listbox}
+
+\subsection{The powerful stuff}
+
+\begin{listbox}
+\begin{itemize}\setlength{\itemsep}{2pt}
+
 \item The notation \texttt{X extends Y ? A : B} is a \emph{conditional type}. It computes a type
       by testing \texttt{X} against \texttt{Y}. This is the construct everything else in this
       note rests on, and it gets a subsection of its own below.
@@ -842,54 +939,145 @@ It is a bit of a head twister, and it bears almost no resemblance to Haskell or 
 \item The notation \texttt{\{ [K in U]: F<K> \}} is a \emph{mapped type}, with one field for
       every member of the union \texttt{U}. This one also gets a subsection of its own below.
 
-\item The type \texttt{Extract<Q, S>} keeps only those members of the union \texttt{Q} that match
-      the shape \texttt{S}, and throws the rest away. Suppose \texttt{Q} is the union
-      \texttt{\{kind: "a"; x: number\} | \{kind: "b"; y: string\}}. Then
-      \texttt{Extract<Q, \{kind: "a"\}>} is \texttt{\{kind: "a"; x: number\}}, the first member on
-      its own. It is how a single case of a tagged union is named by its tag.
+\end{itemize}
+\end{listbox}
 
-\item The type \texttt{Promise<T>} is a computation of a \texttt{T} that has not finished yet.
-      The keywords \texttt{async} and \texttt{await} are how one is made and how one is
-      consumed. §\ref{sec:async} is about nothing else.
+\subsection{\texttt{async} functions}
+
+\begin{orestisbox}
+The type \texttt{Promise<T>} is a computation of a \texttt{T} that has not finished yet. The
+keywords \texttt{async} and \texttt{await} are how one is made and how one is consumed.
+\end{orestisbox}
+
+\subsection{On the level of values}
+
+\begin{listbox}
+\begin{itemize}\setlength{\itemsep}{2pt}
+
+\item The keywords \texttt{interface} and \texttt{type} both name a type, the first restricted to
+      records.
+
+\item The declaration \texttt{const x: T = e} introduces a constant called \texttt{x}, gives it
+      the type \texttt{T}, and sets it equal to the value \texttt{e}. The type may be left out.
+      Writing \texttt{const n = 3} gives \texttt{n} the type \texttt{number}, because \texttt{3}
+      is a number and the checker can see that.
+
+\item The expression \texttt{(x) => e} is a lambda expression.
+
+\item The expression \texttt{x ?? y} is equal to $x$, unless $x$ is \texttt{null} or
+      \texttt{undefined}, in which case it is equal to $y$.
+
+\item The expression \texttt{c ? a : b} is the ordinary conditional expression on the level of
+      values.
 
 \end{itemize}
+\end{listbox}
 
-Four smaller pieces of notation appear in the listings without comment. The expression
-\texttt{(x) => e} is a $\lambda$. The expression \texttt{x ?? y} is $x$, unless $x$ is
-\texttt{null} or \texttt{undefined}, in which case it is $y$. The expression \texttt{c ? a : b} is
-the ordinary conditional \emph{expression}. Do not confuse it with the conditional \emph{type}
-above. Same punctuation, different level. And \texttt{interface} and \texttt{type} both name a
-type, the first restricted to record shapes.
+\newpage
 
-\subsection*{Conditional types, which are the whole trick}
+\section{Structural typing}
+\label{sec:structural}
+
+\begin{sectionbox}
+A type describes what fields a value has. Any value with those fields has that type, whether or
+not anybody said so. Nothing has to be declared and nothing has to be constructed.
+\end{sectionbox}
+
+For unions that has a cost, and an example makes it plain. Suppose a length is either in metres
+or in feet.
+
+\begin{lstlisting}[language=TS]
+type Metres = { value: number };
+type Feet   = { value: number };
+type Length = Metres | Feet;
+\end{lstlisting}
+
+Those two are the same type. A value with one numeric field called \texttt{value} is a
+\texttt{Metres}, and it is equally a \texttt{Feet}, and the checker will let you pass either one
+where the other is expected. Given a \texttt{Length} there is no test that tells you which you
+have, because there is nothing to test.
+
+In Haskell you would write \texttt{data Length = Metres Double | Feet Double}. The constructor is
+itself the answer. TypeScript has no constructors, so if you want to tell the two apart you must
+put something there to look at.
+
+\begin{lstlisting}[language=TS]
+type Metres = { unit: "m";  value: number };
+type Feet   = { unit: "ft"; value: number };
+\end{lstlisting}
+
+Now \texttt{x.unit === "m"} answers the question. But notice what \texttt{unit} is. It is an
+ordinary field holding an ordinary string. The language did not provide it. We added it, and we
+have to keep adding it, and everything that wants to tell metres from feet has to read it.
+
+\subsection{A tagged union writes down a finite choice}
+
+Once every case carries a tag, the checker can use it. Stay with lengths, and give the two cases
+different data so that there is something to get wrong.
+
+\begin{lstlisting}[language=TS]
+type Length =
+  | { unit: "m";  metres: number }
+  | { unit: "ft"; feet: number };
+\end{lstlisting}
+
+\newpage
+
+\begin{pinkbox}
+\section{Conditional types}
+\label{sec:cond}
 
 Everything this note does depends on one construct, so it is worth going slowly.
 
-A \emph{conditional type} is a function from types to types. It is written with the same
-punctuation as an ordinary conditional expression, but it lives one level up, and the checker
-evaluates it before the program runs.
+A \emph{conditional type} is a function from types to types. It is a type constructor. It is
+written with the same punctuation as an ordinary conditional expression, but it lives one level
+up, and the checker evaluates it before the program runs.
 
-Stay with the shelf of books. A book has three fields, and their names form a finite union.
+Stay with the shelf of books. A book has three fields, and their names are \texttt{id},
+\texttt{title} and \texttt{author}. Those three names form a finite union.
 
 \begin{lstlisting}[language=TS]
 type Field = "id" | "title" | "author";
 \end{lstlisting}
 
+\subsection{A function from types to types}
+
 Now notice that the three fields do not hold the same kind of thing. An \texttt{id} is a number.
-A \texttt{title} and an \texttt{author} are strings. That fact can be written down as a type-level
-function.
+A \texttt{title} and an \texttt{author} are strings. That fact can be written down as a function,
+on the level of types.
 
 \begin{lstlisting}[language=TS]
 type FieldType<F extends Field> =
   F extends "id" ? number : string;
 \end{lstlisting}
 
-Read it as a case split on the type \texttt{F}. \texttt{FieldType<"id">} \emph{is} \texttt{number}.
-\texttt{FieldType<"title">} \emph{is} \texttt{string}. These are not conversions or coercions. They
-are the same type, written two ways, and the checker will use either wherever the other is
-expected.
+The word \texttt{extends} appears twice there. Both times it means the same thing, namely
+\emph{is a subtype of}. What differs is what is done with the answer.
 
-Now write a function whose result type is computed from its argument.
+In \texttt{<F extends Field>} it is a \emph{requirement}. The type \texttt{F} must be a subtype of
+\texttt{Field}, which here means one of \texttt{id}, \texttt{title} or \texttt{author}. It ranges
+over the field names, which are the keys of the dictionary. It does not range over the types of the
+values stored under those keys.
+
+In \texttt{F extends "id" ?} it is a \emph{question}. Is \texttt{F} a subtype of \texttt{"id"}?
+That type has exactly one inhabitant, so the question amounts to asking whether \texttt{F} is
+\texttt{"id"} itself. The answer selects one of the two branches. If \texttt{F} is not
+\texttt{"id"} then it must be \texttt{"title"} or \texttt{"author"}. The value stored under either
+of those keys is a string, so the second branch gives \texttt{string}.
+
+\begin{orestisbox}
+\subsection{Question for Orestis}
+
+As a professional type theorist, what do you make of this nonsense? From a Haskell perspective it
+is baffling.
+\end{orestisbox}
+
+\newpage
+
+\subsection{A function on the level of values}
+
+The result type of the function below is computed from its argument type. It looks a little bit
+like a dependent type, but that is not quite what it is.
 
 \begin{lstlisting}[language=TS]
 function field<F extends Field>(b: Book, f: F): FieldType<F> {
@@ -900,35 +1088,104 @@ const n = field(book, "id");      // n : number
 const s = field(book, "title");   // s : string
 \end{lstlisting}
 
-That is the whole trick. The checker read the string \texttt{"id"}, computed
-\texttt{FieldType<"id">}, and concluded that \texttt{n} is a number. Ask for \texttt{n.toFixed(2)}
-and it compiles. Ask for \texttt{s.toFixed(2)} and it does not, because \texttt{s} is a string.
-Nothing ran. No value was inspected. The result type followed from the argument.
+That is the whole trick. The type checker read the string \texttt{"id"}. It computed the type
+\texttt{FieldType<"id">}. It concluded that \texttt{n} is a number. Knowing that is what tells the
+checker which operations on \texttt{n} are legal.
+
+\subsection{The fake container}
+
+Compare this with the introduction. An interface was a pair there. The prompts you may send, and
+for each prompt the type of response it can receive.
+
+Here \texttt{Field} is the type of the prompts, and \texttt{FieldType} is the type of the response
+for each prompt. So \texttt{(Field, FieldType)} is a container, and \texttt{field} is an inhabitant
+of it.
+
+\begin{orestisbox}
+\subsection{Another question for Orestis}
+
+To be honest, I don't understand this and would like you to explain it to me.
+\end{orestisbox}
+
+\subsection{Two limits}
+
+\begin{itemize}\setlength{\itemsep}{4pt}
+
+\item \textbf{The index must be finite.} \texttt{Field} has three members, so \texttt{FieldType}
+      can be written out as a case split, here a single test and a default. A rule indexed by the
+      natural numbers could not be written this way at all. Over a finite index a dependent type
+      is just a table, and a table is something TypeScript can write down.
+
+\item \textbf{The argument must be a literal the checker can see.} In
+      \texttt{field(book, "id")} the string \texttt{"id"} is written in the source. So the checker
+      infers \texttt{F} to be the singleton type \texttt{"id"}, and \texttt{FieldType<"id">}
+      computes to \texttt{number}.
+
+\end{itemize}
+
+That second limit deserves its own example, because it is the one that bites in
+§\ref{sec:impl}. Suppose the field name is not written in the source. Suppose it arrives from
+somewhere else, and all the checker knows is that it is one of the three.
+
+\begin{lstlisting}[language=TS]
+declare const anyField: Field;       // one of the three, but which is not known
+const m = field(book, anyField);
+const u: number = m;
+\end{lstlisting}
+
+In English, that block says three things. There is a field name, and it is one of the three
+(\texttt{id}, \texttt{title}, \texttt{author}), but nobody is saying which. Ask \texttt{field} for
+the value stored under it, and call the answer \texttt{m}. Then try to declare that \texttt{m} is
+a number.
+
+The last line is the problem. It does not convert anything and it does not check anything at run
+time. It is a claim, made to the checker, that \texttt{m} has type \texttt{number}. If the checker
+agrees, the program compiles. If it does not, we learn what type the checker thinks \texttt{m}
+actually has.
 
 \begin{lstlisting}[language=SH]
 $ deno check shelf.ts
-TS2339 [ERROR]: Property 'toFixed' does not exist on type 'string'.
-const bad = field(book, "title").toFixed(2);
-                                 ~~~~~~~
+TS2322 [ERROR]: Type 'string | number' is not assignable to type 'number'.
+const u: number = m;
+      ^
 \end{lstlisting}
 
-A prompt, and a reply whose type is fixed by which prompt it was. That is the pair from the
-introduction, and here it is enforced by the compiler.
+In this case the type checker thinks \texttt{m} is of type \texttt{string | number}. It cannot be
+declared a number, because as far as the checker knows it might be a string.
 
-Two limits come with it, and both matter later.
+Why is \texttt{m} not a number? Because the checker was never told which field name it had.
 
-\textbf{The index must be finite.} \texttt{Field} has three members, so \texttt{FieldType} can be
-written as a case split with three branches and a default. A rule indexed by the natural numbers
-could not be written this way at all. Over a finite index a dependent type is just a table, and a
-table is something TypeScript can write down.
+Write \texttt{field(book, "id")} and the checker sees the word \texttt{"id"} sitting there in the
+source, so it takes \texttt{F} to be \texttt{"id"}. Write \texttt{field(book, anyField)} and all it
+knows is that the name is one of the three, so it takes \texttt{F} to be all three at once.
 
-\textbf{The argument must be a literal the checker can see.} \texttt{field(book, "id")} works
-because \texttt{"id"} is there in the source. Pass a variable of type \texttt{string} and
-\texttt{F} cannot be narrowed to a single member, so the result type degenerates to the union of
-every branch. The dependency is real, and it lives entirely at compile time. Getting a run-time
-value into it costs a case split and, as §\ref{sec:impl} shows, a type assertion per case.
+It then works out \texttt{FieldType} for each of them.
 
-\subsection*{Mapped types, which make a table total}
+\begin{lstlisting}[language=TS]
+FieldType<"id">      is  number
+FieldType<"title">   is  string
+FieldType<"author">  is  string
+\end{lstlisting}
+
+Put those three answers together and \texttt{m} could be a number or it could be a string. That is
+what \texttt{number | string} means, and it is why the last line was refused.
+
+So the dependency only works when the checker can see which name it is, and the checker only ever
+sees the source. A name that is picked while the program is running cannot reach it.
+
+\begin{orestisbox}
+\subsection{Question for Orestis}
+
+How does Lean solve this problem?
+\end{orestisbox}
+
+\subsection{Recovering the name}
+
+To get it back you write a \texttt{switch} with one branch per name. Inside \texttt{case "id":} the
+checker knows the name is \texttt{"id"} again, so \texttt{FieldType<"id">} is \texttt{number} once
+more. §\ref{sec:impl} pays exactly that price, and a type assertion in each branch on top of it.
+
+\subsection{Mapped types, which make a table total}
 
 The second construct to go slowly over is the one that builds a record with a field for every
 member of a union.
@@ -958,46 +1215,57 @@ const getters: Getters = {
 };
 \end{lstlisting}
 
-Now the point of the whole thing. The record is \emph{total by construction}. Leave one out and the
-object no longer has the type \texttt{Getters}, and the program does not compile.
+That version compiles. Now the point of the whole thing. The record is \emph{total by
+construction}. Try leaving one of the three out.
 
-\begin{lstlisting}[language=SH]
-$ deno check shelf.ts
-TS2741 [ERROR]: Property 'author' is missing in type
-       '{ id: ...; title: ...; }' but required in type 'Getters'.
+\begin{lstlisting}[language=TS]
+const getters: Getters = {
+  id:    (b) => b.id,
+  title: (b) => b.title,
+};                            // author is missing
 \end{lstlisting}
 
-Add a fourth name to \texttt{Field} and the same error appears, naming the new one. There is no
-default branch to fall through and no dispatch to forget. A whole class of mistake becomes
-unwritable rather than merely untested.
+\begin{lstlisting}[language=SH]
+$ deno check getters.ts
+TS2741 [ERROR]: Property 'author' is missing in type
+       '{ id: (b: Book) => number; title: (b: Book) => string; }'
+       but required in type 'Getters'.
+\end{lstlisting}
+
+The object with only two fields is not a \texttt{Getters}, because \texttt{Getters} has a field for
+every member of \texttt{Field} and \texttt{Field} has three members. So the program does not
+compile.
+
+There is no default branch to fall through and no dispatch to forget. A whole class of mistake
+becomes unwritable rather than merely untested.
 
 That is the second half of the trick. A conditional type says what the answer to each prompt should
 be. A mapped type insists that every prompt has one. Together, over a finite union, they are a
 dependent function written as a table, and §\ref{sec:impl} builds the game's five servers out of
 exactly this.
+\end{pinkbox}
 
-Three properties of the system as a whole, stated now because everything later depends on them.
+\newpage
 
-\textbf{The types are erased.} They are checked, then deleted, and ordinary JavaScript runs. No
-value carries its type at run time and no check can be derived from a type. This is why the
-\texttt{as} row above says \emph{axiom} rather than \emph{coercion}.
+\section{Compiling down to JavaScript}
+\label{sec:unusual}
 
-\textbf{Typing is structural, not nominal.} A type is a description of a shape, and anything of
-that shape has that type. There are no constructors to apply, and no tags but the ones you write
-yourself as ordinary fields. That is why every union in this note carries a literal \texttt{tag} or
-\texttt{kind} field. The discrimination that a real sum type would give you for nothing has to be
-put in by hand, as data.
+TypeScript compiles to JavaScript, and JavaScript has no types. So the types are checked, then
+deleted, and ordinary JavaScript runs. No value carries its type at run time, and no check can be
+derived from a type.
 
+That one fact is the subject of this section. It is why a cast is not a check, and why a value
+from outside has no type until you give it one.
+
+\begin{center}
+\colorbox{hdrbg}{\begin{minipage}{0.94\linewidth}\vspace{1.5mm}
 \textbf{The system is deliberately unsound.} This is the sentence to carry into the rest of the
 note. TypeScript does not claim that a well-typed program cannot go wrong. It claims to catch a
-useful proportion of mistakes, at a cost the working programmer will actually pay. The operator \texttt{as} is
-unsound by design. The type \texttt{any} is a hole by design. Array indexing yields \texttt{T} rather than
-\texttt{T | undefined} by default. Object types are not exact. So ``the compiler checked it'' is a
-claim of a genuinely weaker kind than the reader is used to. §\ref{sec:enforcement} is about
-measuring exactly how much weaker, and where.
+useful class of mistakes.
+\vspace{1.5mm}\end{minipage}}
+\end{center}
 
-
-\subsection*{Types are checked before the program runs}
+\subsection{Types are checked before the program runs}
 
 TypeScript is a type system over JavaScript. The types are annotations. You write them. A checker
 reads them. Then they are removed and ordinary JavaScript runs.
@@ -1017,11 +1285,14 @@ const b: Book = { id: "1", title: "Diaspora", author: "Greg Egan" };
 Nothing ran. The mistake was found by reading the program. That is the whole point of having a
 checker. It is the pleasant half of the story.
 
-\subsection*{A cast is a promise, not a check}
+\subsection{A cast is a promise, not a check}
 
 The types are \emph{erased}. The program that executes has no representation of them and no check
 derived from them. So the \texttt{as} operator is not a conversion. It is an assertion. The checker
 accepts it without verifying, and the runtime cannot verify it at all.
+
+In the example below, \texttt{toFixed} is a method that rounds a number to a given number of
+decimal places. It exists on numbers and on nothing else, which is what makes it a useful test.
 
 \begin{lstlisting}[language=TS]
 const raw = '{"id":"1","title":"Diaspora","author":"Greg Egan"}';
@@ -1039,11 +1310,27 @@ The checker was told \texttt{id} is a number and believed it. The id was a strin
 error surfaced at the first place that actually used it. That may be a long way from the cast, and
 in a real program is likely to be somewhere else entirely.
 
-\subsection*{\texttt{unknown} is what you want at a boundary}
+\subsection{\texttt{unknown} is what you want at a boundary}
 
-Two types describe a value whose shape you do not know. The type \texttt{any} switches the checker off.
-Every operation on an \texttt{any} is permitted. The type \texttt{unknown} does the opposite. It permits
-nothing until you have established what you have.
+Two types describe a value you know nothing about, and they behave in opposite ways.
+
+The type \texttt{any} switches the checker off. Every operation on an \texttt{any} is permitted.
+
+\begin{lstlisting}[language=TS]
+const raw: any = JSON.parse('{"id":"1","title":"Diaspora","author":"Greg Egan"}');
+console.log(raw.id.toFixed(0));
+\end{lstlisting}
+
+\begin{lstlisting}[language=SH]
+$ deno check anyex.ts     -- passes, no complaint
+$ deno run   anyex.ts
+TypeError: raw.id.toFixed is not a function
+\end{lstlisting}
+
+The id was the string \texttt{"1"} all along. Nothing objected, because nothing was looking.
+
+The type \texttt{unknown} does the opposite. It permits nothing until you have established what you
+have.
 
 \begin{lstlisting}[language=TS]
 const raw: unknown = JSON.parse('{"id":"1","title":"Diaspora","author":"Greg Egan"}');
@@ -1051,6 +1338,7 @@ console.log(raw.id);
 \end{lstlisting}
 
 \begin{lstlisting}[language=SH]
+$ deno check unknownex.ts
 TS18046 [ERROR]: 'raw' is of type 'unknown'.
 \end{lstlisting}
 
@@ -1058,9 +1346,9 @@ That refusal is the useful thing. The type \texttt{any} would have compiled and 
 manner of the previous subsection. The type \texttt{unknown} makes the boundary visible. It refuses to let
 you cross it accidentally.
 
-\subsection*{Validate, do not cast}
+\subsection{Validate, do not cast}
 
-So how does a value of unknown shape become one of known shape honestly? By code that looks at
+So how does a value we know nothing about honestly become one whose type we know? By code that looks at
 the fields. The signature to aim for is \texttt{unknown} in, and the type \emph{or nothing} out.
 
 \begin{lstlisting}[language=TS]
@@ -1074,174 +1362,136 @@ function asBook(u: unknown): Book | null {
 }
 \end{lstlisting}
 
-\begin{lstlisting}[language=SH]
-$ deno run t6.ts
-accepted: Diaspora (1)
-refused: {"id":"1","title":"Diaspora","author":"Greg Egan"}
-refused: {"id":1,"author":"Greg Egan"}
-\end{lstlisting}
+\newpage
 
-Four things are deliberate.
-
-The parameter is \texttt{unknown}, so nothing can be done to it by accident.
-
-\textbf{Refusal is a value.} It is \texttt{null}, not an exception. So the caller has to decide
-what to do about it.
-
-The returned object is \textbf{constructed}, field by field, rather than asserted. So it is a
-\texttt{Book} because it was built as one.
-
-And the checks are what make the type true. After this function, a \texttt{Book} really does have a
-numeric id, and everything downstream may rely on it.
-
-\subsection*{A tagged union writes down a finite choice}
-
-When a value is one of several kinds of thing, the kinds are written as a union. Each carries a
-field that says which it is.
+Try it on three documents.
 
 \begin{lstlisting}[language=TS]
-type Query =
-  | { kind: "count" }
-  | { kind: "find";  title: string }
-  | { kind: "byAuthor"; author: string };
+asBook({ id: 1,   title: "Diaspora", author: "Greg Egan" })
+// { id: 1, title: "Diaspora", author: "Greg Egan" }
+
+asBook({ id: "1", title: "Diaspora", author: "Greg Egan" })
+// null -- the id is a string
+
+asBook({ id: 1,                     author: "Greg Egan" })
+// null -- there is no title
 \end{lstlisting}
 
-The value of writing it this way is that the checker can tell the cases apart. Inside
-\texttt{if (q.kind === "find")} the type of \texttt{q} is the second member, and \texttt{q.title}
-is available. In the other branches it is not, and asking for it does not compile.
-
-\subsection*{The response type can depend on the request}
-
-Now the part that matters for everything above. Each of those three queries deserves a different
-kind of answer. A count is a number. A search is a book or nothing. A filter is a list. That is a
-function from the request to the \emph{type} of the response. Over a finite set of cases it can
-simply be written down.
-
-\begin{lstlisting}[language=TS]
-interface Answers { count: number; find: Book | null; byAuthor: Array<Book> }
-type Reply<K extends Query["kind"]> = Answers[K];
-\end{lstlisting}
-
-The type \texttt{Reply<"count">} is \texttt{number}. The type \texttt{Reply<"byAuthor">} is
-\texttt{Array<Book>}. Read \texttt{Answers} as the table of a function from the tag to a type.
-
-\subsection*{The handler table, total by construction}
-
-A program answering those queries is a function whose result type depends on its argument. Over a
-finite tag set it can be written as a record, one entry per case.
-
-\begin{lstlisting}[language=TS]
-type Handlers = { [K in Query["kind"]]: (q: Extract<Query, { kind: K }>) => Reply<K> };
-
-const handlers: Handlers = {
-  count:    (_q) => SHELF.length,
-  find:     (q)  => SHELF.find(b => b.title === q.title) ?? null,
-  byAuthor: (q)  => SHELF.filter(b => b.author === q.author),
-};
-\end{lstlisting}
-
-Each entry is checked against its own case. Inside \texttt{find}, \texttt{q} is the \texttt{find}
-member and the return type is \texttt{Book | null}, not a union over all three.
-
-And the table is total. Not by anyone's diligence, but by the shape of the type. Add a fourth query
-and the object stops satisfying \texttt{Handlers}.
-
-\begin{lstlisting}[language=SH]
-TS2741 [ERROR]: Property 'oldest' is missing in type
-       '{ count: ...; find: ...; byAuthor: ...; }' but required in type 'Handlers'.
-\end{lstlisting}
-
-There is no default branch to fall through and no dispatch to forget. A whole class of mistake
-becomes unwritable rather than merely untested.
-
-\subsection*{A server handler, and who owns the loop}
-
-A server is the same idea, with the request arriving over a socket. What you write is a function
-from a request to a response. The runtime supplies everything else. The socket, the accept loop,
-the parsing, the concurrency.
-
-\begin{lstlisting}[language=TS]
-Deno.serve({ port: 8098 }, (req: Request): Response => {
-  if (req.method !== "GET") return json({ error: "GET only" }, 405);
-  return json(SHELF, 200);
-});
-\end{lstlisting}
-
-\begin{lstlisting}[language=SH]
-$ curl -i http://127.0.0.1:8098/
-HTTP/1.1 200 OK
-content-type: application/json
-
-[{"id":1,"title":"Diaspora","author":"Greg Egan"}]
-
-$ curl -X POST http://127.0.0.1:8098/     -- 405
-\end{lstlisting}
-
-That is what ``event handler'' means operationally. Inversion of control, with the loop on the
-far side of the library boundary. But notice that the loop is not what makes it event-driven in the
-sense that matters. A command-line tool has no loop at all and is event-driven in the same sense.
-What both have is a response whose type is indexed by the prompt. The loop is scheduling. The
-indexing is the type.
-
-\subsection*{Where the type system stops}
-
-Put the two halves of this section together and the shape of the whole problem appears.
-
-On the inside, the checker is strong. It computes which answers belong to which requests. It makes
-a handler table total. It turns a class of mistake into a compile error.
-
-On the outside, at the wire, it contributes nothing whatsoever. Everything arriving is
-\texttt{unknown}. The checker ran before the process started and has no representative in it. A
-single unchecked cast at that boundary forfeits every guarantee inside it. From then on the checker
-is reasoning about a claim rather than a fact.
-
-Which is why the whole of it rests on the smallest piece. A function with the signature
-\texttt{unknown → T | null}, that looks at the fields, and refuses.
-
-And that is the pair again, with the strongest enforcer yet standing on one side of it. The handler
-table is a prompt together with a reply whose type is fixed by the prompt, and the compiler checks
-the pairing exhaustively. But only inside one process. The kernel checked everything and understood
-nothing. The compiler understands everything and checks almost nothing, because almost nothing
-stays where it can see it.
+\newpage
 
 \section{\texttt{async}, \texttt{await}, and the event loop}
 \label{sec:async}
 
-§\ref{sec:blocking} left a bill to pay. A server that keeps one flow of control and holds many
-conversations may not block anywhere. So every operation that would have waited has to be written
-in three parts. Start it. Hand the loop back its thread. Arrange to be resumed when the answer
-comes.
+This section contains one fact, and the rest of it is consequences. The keyword \texttt{await} is a
+continuation-passing transformation that the compiler performs and then hides. Three things the
+rest of this note needs follow from that single mechanism. The points at which one computation can
+be interrupted by another become countable. The four combinators of the algebra become expressible.
+And a two-line function body turns out to be a container morphism.
 
-This section is about how that is written. It ends at the reason the whole note exists, because the
-thing it is written with turns out to be a container morphism.
+\subsection{One flow of control, and it may not stop}
+\label{sec:oneflow}
 
-\subsection*{Callbacks, and why they were not enough}
+A server holds many conversations at once, most of them idle most of the time, so a single flow of
+control that blocks can serve only one of them.
 
-The first answer was to pass the continuation explicitly. You do not ask for the bytes. You hand
-over a function to be called with them later.
+That is the whole difficulty. Section~\ref{sec:threads} said what blocking costs. A blocked process
+is not runnable, and the kernel will not schedule it again until the thing it waits on is ready.
+Inside a server there is one flow of control and it is inside your function, so one blocking call
+stops not that conversation but all of them.
+
+The design used by \texttt{nginx}, by Node and by Deno keeps one flow of control and never lets it
+block. Every operation that would have waited is written in three parts instead.
+
+\begin{enumerate}\setlength{\itemsep}{2pt}
+\item \textbf{Start it.} Ask for the thing, and do not wait for it.
+\item \textbf{Give the flow of control back.} Stop, so that the other conversations can be served.
+\item \textbf{Arrange to be resumed.} Leave behind what should happen when the answer arrives.
+\end{enumerate}
+
+Something has to hold those arrangements. That something is the \emph{event loop}. It is a set of
+outstanding resumptions, each of them waiting on one thing, together with a way of asking which of
+those things are ready now. The loop takes one that is ready, runs the piece of work it has earned,
+and asks again. It never blocks on any particular conversation because it never commits to one.
+
+\newpage
+
+\subsection{How it actually works}
+
+The runtime owns that loop and you never write it. You hand it one function, and it calls that
+function once for each request that arrives. Here is a whole server.
+
+\begin{orestisbox}
+A reminder from \S\ref{sec:respval}. A \texttt{Request} is one arriving HTTP request and a
+\texttt{Response} is one outgoing HTTP response. A \texttt{Response} is built from a body, a status
+number and a set of headers. A handler is a function from the first to the second. And we are
+assuming throughout that the bodies of our requests and responses are well formed JSON.
+\end{orestisbox}
 
 \begin{lstlisting}[language=TS]
-readFile("shelf.json", (err, text) => {
-  if (err) return done(err);
-  lookup(JSON.parse(text).id, (err2, book) => {
-    if (err2) return done(err2);
-    render(book, done);
+const json = (body: unknown, status: number) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
   });
+
+const census = async () => ({ fields: 30, drivers: 22, dead: 11 });
+
+Deno.serve({ port: 8099 }, async (req) => {
+  const body = await req.json();
+  if (body.tag !== "Census") return json({ error: "not a prompt I accept", got: body }, 400);
+  return json(await census(), 200);
 });
 \end{lstlisting}
 
-This works and it is genuinely non-blocking. What it costs is legibility, and the cost is
-structural rather than aesthetic.
+Three lines of that are the handler. The rest builds a reply.
 
-The order of the text no longer matches the order of events. There is no value to return, so a
-function that produces something cannot say so in its type. And, worst, \texttt{try}/\texttt{catch}
-is useless. By the time the callback runs, the \texttt{try} block that would have caught its
-failure has long since exited. Hence the \texttt{err} threaded by hand through every level. Hence
-also the fact that forgetting one is invisible.
+The keyword \texttt{await} appears three times and the keyword \texttt{async} twice.
+Section~\ref{sec:awaitreally} is about what they do. Until then, read \texttt{await} as the point at
+which this function stops and is continued later.
 
-\subsection*{A promise is a value standing for a computation}
+Now send it a prompt it accepts, and then one it does not.
 
-The fix is to make the pending computation a first-class value.
+\begin{lstlisting}[language=SH]
+$ curl -si -X POST http://127.0.0.1:8099/ -d '{"tag":"Census"}'
+HTTP/1.1 200 OK
+content-type: application/json
+
+{"fields":30,"drivers":22,"dead":11}
+
+$ curl -si -X POST http://127.0.0.1:8099/ -d '{"tag":"Nonsense"}'
+HTTP/1.1 400 Bad Request
+content-type: application/json
+
+{"error":"not a prompt I accept","got":{"tag":"Nonsense"}}
+\end{lstlisting}
+
+Two things in that handler matter for everything below. The reply is computed from the prompt, so
+what comes back depends on what went in. And the function stops twice before it answers, once for
+the request body and once for the reply, which is the reason a loop has to exist at all.
+
+\newpage
+
+\subsection{Inversion of control}
+
+\begin{sectionbox}
+This arrangement is called \emph{inversion of control}. An ordinary program calls a library and the
+library returns an answer. Here the library calls the program.
+
+The library in question is the server. The call \texttt{Deno.serve} is the whole of it. It owns the
+socket, it owns the loop, and it owns every connection that is open. The one thing it does not have
+is what to answer, so that is the piece you hand to it.
+
+You pass your function to the library as an argument. So the server is the library plus your one
+function. Your function is never reached by any line you wrote, and the loop appears nowhere in
+your source.
+\end{sectionbox}
+
+\subsection{A promise is the pending computation as a value}
+
+An operation that has been started and has not yet finished needs something to stand for it. The
+loop has to be able to say which of them are ready. Your code has to be able to say what should
+happen when one of them is. So the pending computation is made a value in its own right, and it has
+a name.
 
 \begin{center}\small
 \begin{tabular}{@{}ll@{}}
@@ -1255,121 +1505,223 @@ The fix is to make the pending computation a first-class value.
 \end{tabular}
 \end{center}
 
-It is a monad, and \texttt{Promise<T>} is its type constructor. Reading it that way is the useful
-move, because it predicts the two operators exactly. Something must inject a value into it.
-Something must sequence a computation after it. TypeScript spells those \texttt{async} and
-\texttt{await}. Their whole purpose is to let you write the bind in direct style.
+\begin{sectionbox}
+The type constructor \texttt{Promise} comes with the two operators one would expect. There is a
+unit, taking a value to a promise already holding it. There is a bind, taking a promise and a
+function from its value to a second promise, and giving a promise of the second. TypeScript writes
+the unit as \texttt{async} and the bind as \texttt{await}.
+\end{sectionbox}
 
-\subsection*{\texttt{async} and \texttt{await} are the introduction and the elimination}
-
-The keyword \texttt{async} marks a function whose result is wrapped.
-
-\begin{lstlisting}[language=TS]
-async function two(): Promise<number> { return 2; }
-//     the annotation is Promise<number>, and the body returns a bare 2
-\end{lstlisting}
-
-So \texttt{async} turns a function $A \to T$ into $A \to \texttt{Promise}\langle T\rangle$. It
-inserts the injection for you at every \texttt{return}.
-
-The keyword \texttt{await} goes the other way, and only inside an \texttt{async} function.
-
-\begin{lstlisting}[language=TS]
-async function titleOf(id: number): Promise<string> {
-  const res  = await fetch(`http://127.0.0.1:8099/books/${id}`); // Promise<Response>
-  const book = await res.json();                                 // Promise<unknown>
-  return (book as Book).title;                                   // an axiom; see the section above
-}
-\end{lstlisting}
-
-At the type level \texttt{await} takes a \texttt{Promise<T>} to a \texttt{T}. That is all there is
-to say about its type. At the level of what the machine does it is more interesting. The next
-subsection is the one to read slowly.
-
-\subsection*{What \texttt{await} actually does, which is not waiting}
+\subsection{What \texttt{await} actually does, which is not waiting}
+\label{sec:awaitreally}
 
 The word is a lie, and the lie is the feature.
 
 At an \texttt{await}, the function \emph{suspends}. Everything after that point in the body is
-registered as a continuation of the promise. Control returns to the event loop, which is free to
-run every other conversation the server is holding. The frame is kept alive somewhere other than
-the thread's stack. When the promise settles, the loop resumes that frame, at that line, with the
-value in hand. Execution proceeds downwards through the rest of the body as though nothing had
-happened.
+registered with the event loop as the continuation of that promise. Control returns to the loop,
+which is free to run every other conversation the server is holding. The frame is kept alive
+somewhere other than the stack. When the promise settles, the loop resumes that frame, at that
+line, with the value in hand, and execution proceeds down the rest of the body as though nothing
+had happened.
 
-So the compiler is performing a continuation-passing transformation and hiding it. The callback
-version above is what \texttt{titleOf} becomes. Three consequences follow. They are the substance
-of this section.
+\newpage
 
-\textbf{The text reads top to bottom and the execution does not.} Between two lines of an
-\texttt{async} function, arbitrarily much of the rest of the program may have run. There is no
-\texttt{sleep} anywhere in the machine. The thread was never idle.
-
-\textbf{An \texttt{async} function suspending is not the process blocking.} This is the distinction
-the previous section was built to make available. A blocked process is not runnable and the kernel
-will not schedule it. A suspended \texttt{async} function is a data structure in a process that is
-running perfectly well and answering other requests. In §\ref{sec:impl} this is why a server can be
-a client without ceasing to be a server. The Plan sits mid-answer with four prompts outstanding
-beneath it, still listening, because suspending is not the same as being busy.
-
-\textbf{Ordinary control flow is restored.} The continuation is genuinely the rest of the function
-body, so \texttt{try}/\texttt{catch} works across a suspension. A rejected promise raises at the
-\texttt{await} that was waiting on it, inside the \texttt{try} that lexically encloses it. That is
-what the callback version could not do. It is why the wire code in §\ref{sec:impl} can afford to
-distinguish its failures by catching them.
-
-\subsection*{The atomicity guarantee, and its exact extent}
-
-Here is the property a reader from formal verification will want stated precisely. It is unusually
-strong and unusually cheap. Everything in this repository's server state depends on it.
-
-There is one thread, and it is never preempted. A piece of code therefore runs \emph{to completion},
-with no other code of yours interleaved, from wherever it starts until the next point at which it
-yields. It yields only at an \texttt{await}, or by returning. No locks. No atomics. No memory
-model. No data races. Between two \texttt{await}s you have the machine to yourself.
-
-And here is the extent of it, which is the part that catches people. \emph{At} an \texttt{await},
-everything may change. An invariant that holds across a straight-line block does not survive a
-suspension unless you say so.
+Here are two functions that each suspend once, started one after the other.
 
 \begin{lstlisting}[language=TS]
-let stock = 10;
+async function slow(name: string, ms: number) {
+  console.log(`${name}: before`);
+  await new Promise(r => setTimeout(r, ms));
+  console.log(`${name}: after`);
+}
+slow("A", 20);
+slow("B", 10);
+console.log("both started, neither finished");
+\end{lstlisting}
 
-async function spend(n: number) {
-  if (stock < n) return false;      //  checked here
-  await ship(n);                    //  <-- everything else runs
-  stock = stock - n;                //  acted on here, on a stale check
-  return true;
+\begin{lstlisting}[language=SH]
+$ deno run d1.ts
+A: before
+B: before
+both started, neither finished
+B: after
+A: after
+\end{lstlisting}
+
+Read the order. Neither call has reached its second \texttt{console.log} by the time the last line
+of the program runs. Both are suspended at their \texttt{await}, and the flow of control has gone
+back to the loop, which had nothing else to do but finish the program.
+
+So the text of \texttt{slow} runs top to bottom and its execution does not. Between the two lines
+of one call, the whole of the other call and the rest of the program ran. There is no sleeping
+anywhere in the machine, and the flow of control was never idle.
+
+Two properties follow, and the code in this note leans on both.
+
+The value is typed. At the level of types \texttt{await} takes a \texttt{Promise<T>} to a
+\texttt{T}, so a function can say in its type what it produces.
+
+\begin{lstlisting}[language=TS]
+async function titleOf(id: number): Promise<string> {
+  const res  = await fetch(`http://127.0.0.1:8099/books/${id}`);
+  const book = await res.json();
+  return (book as Book).title;
 }
 \end{lstlisting}
 
-Two calls to \texttt{spend(6)} both pass the test before either reaches the assignment. The stock
-ends at $-2$. This is the shape of a race, without a thread anywhere.
+\begin{sectionbox}
+One distinction before moving on, because the two words are easy to run together. Although they are
+similar concepts, a suspended \texttt{async} function is not a blocked process as in
+\S\ref{sec:threads}. A blocked process is not runnable and the kernel will not schedule it. A
+suspended function is a data structure inside a process that is running perfectly well and
+answering other requests.
+\end{sectionbox}
 
-The mitigation is that the interleaving points are \emph{visible in the source}. There are exactly
-as many of them as there are \texttt{await} keywords, and you can count them. In the threaded
-design they are between every pair of instructions and cannot be counted at all. That is a large
-reduction in what must be reasoned about. It is not zero. And nothing checks it.
+\newpage
 
-\subsection*{Concurrency is not parallelism, and \texttt{Promise.all} is the tensor}
+\section{How Deno runs a CLI tool}
+\label{sec:denocmd}
 
-Awaiting two promises one after the other runs them one after the other. To have both in flight
-you must start both before awaiting either. The operator that does it is \texttt{Promise.all}. It
-takes a list of promises and produces a promise of the list, settling when \emph{all} of them
-have.
+The TypeScript web server Deno is itself a CLI tool, and it can execute other CLI tools.
 
 \begin{lstlisting}[language=TS]
-const [a, b] = await Promise.all([ask(8802), ask(8803)]);  // both in flight
-const c = await ask(8804); const d = await ask(8805);      // one, then the other
+const cmd = new Deno.Command("sh", {
+  args: ["-c", "echo on stdout; echo on stderr >&2; exit 3"],
+  stdout: "piped",
+  stderr: "piped",
+});
+
+const { code, stdout, stderr } = await cmd.output();
+const dec = new TextDecoder();
+
+console.log("exit status :", code);
+console.log("slot 1      :", dec.decode(stdout).trim());
+console.log("slot 2      :", dec.decode(stderr).trim());
 \end{lstlisting}
 
-Nothing is running in parallel in either line. There is one thread. What differs is whether the
-two waits overlap.
+\begin{lstlisting}[language=SH]
+$ deno run --allow-run cmd.ts
+exit status : 3
+slot 1      : on stdout
+slot 2      : on stderr
+\end{lstlisting}
 
-Now read the first line again with the container algebra in front of you. Both sides are prompted.
-\emph{Both replies are owed.} If either rejects, the whole thing rejects. There is no outcome in
-which one answer arrives and the other is excused. That is the tensor, exactly. The game's
-\texttt{delegateAll} is one line, and its comment says so.
+Read it against \S\ref{sec:unix}. The first argument names the program. The field \texttt{args} is
+the argument vector the program will receive. The word \texttt{piped} says that slot~1 and slot~2
+are to be handed back rather than joined to the terminal. The call \texttt{cmd.output} does the
+\texttt{fork} and the \texttt{exec}, waits for the copy to finish, and returns three things. The
+exit status, and the bytes written to each of the two output slots.
+
+Two details matter for what follows. The bytes come back as bytes, so a \texttt{TextDecoder} turns
+them into a string. A program that writes a line writes a newline at the end of it, and that
+newline is in those bytes, so the method \texttt{trim} is used to take it off.
+
+\begin{lstlisting}[language=TS]
+const cmd = new Deno.Command("sh", { args: ["-c", "echo hello"], stdout: "piped" });
+const { stdout } = await cmd.output();
+const text = new TextDecoder().decode(stdout);
+
+console.log("as decoded :", JSON.stringify(text));
+console.log("trimmed    :", JSON.stringify(text.trim()));
+\end{lstlisting}
+
+\begin{lstlisting}[language=SH]
+$ deno run --allow-run tr.ts
+as decoded : "hello\n"
+trimmed    : "hello"
+\end{lstlisting}
+
+The method \texttt{trim} removes whitespace from both ends of a string. It is the whole of what it
+does. And the call is awaited, which is what makes a spawned process usable from a
+server. The whole descent is a suspension, and the flow of control goes back to the loop while the
+child runs.
+
+\subsection{Deno can call Claude Code}
+
+Claude himself is a large language model running on Anthropic's servers. The Claude Code harness is
+something else entirely. It is a TypeScript program running on Unix as a CLI tool, and it is the
+only part of the arrangement we can point at.
+
+So a web server of the kind in \S\ref{sec:async} can call it, because calling a CLI tool is
+exactly what the previous listing did. Here is a whole server that does this.
+
+\begin{lstlisting}[language=TS]
+async function askClaude(prompt: string): Promise<string> {
+  const cmd = new Deno.Command("claude", {
+    args: ["-p", prompt],
+    stdout: "piped",
+  });
+  const { code, stdout } = await cmd.output();
+  if (code !== 0) throw new Error(`claude exited ${code}`);
+  return new TextDecoder().decode(stdout).trim();
+}
+
+Deno.serve({ port: 8097 }, async (req) => {
+  const body = await req.json();
+  if (typeof body.ask !== "string") return json({ error: "expected {ask: string}" }, 400);
+  return json({ reply: await askClaude(body.ask) }, 200);
+});
+\end{lstlisting}
+
+And here is how we make a request to that server.
+
+\begin{lstlisting}[language=SH]
+$ curl -s -X POST http://127.0.0.1:8097/ -d '{"ask":"Reply with exactly the word: yes"}'
+{"reply":"yes"}
+\end{lstlisting}
+
+A prompt arrived over a socket. It went down into a process. A reply came back up and was answered
+with. That is the whole of the game, at one level.
+
+\newpage
+
+\section{Delegation}
+\label{sec:delegation}
+
+The function \texttt{delegate} carries one prompt to one port and then spawns a new process. The
+output of this new process is the response.
+
+The process it spawns runs \texttt{delegate.ts}, which is a small CLI tool of the game's own. That
+tool receives a port, a prompt and a depth as its argument vector. It makes one HTTP request to the
+server listening on that port. It writes the reply on standard output and nothing else, so the
+caller can parse the whole of what comes back. Its own comment says that this file is the
+mapping $u$, made executable.
+
+\begin{lstlisting}[language=TS]
+export async function delegate(
+  port: number, prompt: unknown, depth: number,
+): Promise<unknown> {
+  const cmd = new Deno.Command("deno", {
+    args: ["run", "--quiet", "--allow-net", "delegate.ts",
+           String(port), JSON.stringify(prompt), String(depth)],
+    stdout: "piped",
+  });
+  const { code, stdout } = await cmd.output();
+  const text = new TextDecoder().decode(stdout);
+  if (code !== 0) throw new Error(`delegate to :${port} exited ${code}`);
+  return JSON.parse(text) as unknown;
+}
+\end{lstlisting}
+
+The prompt goes down as an argument. The reply comes back on standard output. So one hop costs one
+process, which is deliberate. The boundary is a real one rather than a function call wearing a
+costume.
+
+\begin{orestisbox}
+A reminder from \S\ref{sec:cond}. The keyword \texttt{extends} means \emph{is a subtype of}, and it
+does two different jobs with that answer.
+
+In \texttt{<T extends ...>} it is a requirement. Whatever \texttt{T} turns out to be, it must be a
+subtype of what follows. Nothing is computed.
+
+In \texttt{T extends X ? A : B} it is a question, and the answer chooses a type. That is the
+conditional type, and it is what writes down the second half of a container, meaning for each
+prompt the type of the reply.
+
+Only the first of the two appears below. The second is what \S\ref{sec:impl} is built on.
+\end{orestisbox}
+
+Now the game's \texttt{delegateAll} is one line, and its comment says so.
 
 \begin{lstlisting}[language=TS]
 /** Fire several prompts at once and require a reply from each -- the tensor's defining move. */
@@ -1379,8 +1731,30 @@ export const delegateAll = <T extends readonly [number, unknown][]>(
   Promise.all(calls.map(([port, prompt]) => delegate(port, prompt, depth)));
 \end{lstlisting}
 
-The other three combinators fall out of the same reading. This is the correspondence the rest of
-the note is built on.
+That line needs unpacking.
+
+\begin{itemize}\setlength{\itemsep}{2pt}
+\item The type \texttt{[number, unknown]} is a pair. A port number, and a prompt whose type is not
+      yet known.
+\item So the argument \texttt{calls} is a list of such pairs. The word \texttt{readonly} says this
+      function will not alter the list it was handed.
+\item The method \texttt{calls.map} applies a function to every element and collects the results.
+      Here every pair becomes one promise.
+\item The pattern \texttt{([port, prompt])} takes a pair apart in the place where the parameter
+      would be named.
+\item The function \texttt{delegate} fires one prompt at one port and returns a promise of the
+      reply. That is the descent, and it spawns a process.
+\item The operator \texttt{Promise.all} turns the list of promises into one promise of a list.
+\item The number \texttt{depth} is how far down the tower this hop is. It rides along so the trace
+      can indent, and it plays no part in the algebra.
+\end{itemize}
+
+So a list of pairs goes in and one promise of a list of replies comes out. Notice that nothing is
+awaited here. The caller decides when to wait, and until it does, every prompt is in flight.
+
+\subsection{The other three combinators}
+
+The other three fall out of the same reading.
 
 \begin{center}\small
 \begin{tabular}{@{}lll@{}}
@@ -1396,39 +1770,92 @@ $+$ sum                 & a \texttt{switch} on the tag & one side or the other \
 \end{tabular}
 \end{center}
 
+The third row is only expressible because \texttt{await} returns a value. The second prompt is
+computed from the first reply.
+
 The middle row is the honest one. Nothing in \texttt{Promise} enforces that exactly one of the two
 is awaited. The code simply awaits one. The claim that this is a product rather than a tensor is
-carried by the code's shape, and by nobody's checking. That row is an \enfD{} entry in the ledger of
-§\ref{sec:enforcement}. And it is worth noticing what has happened. The two combinators whose
-\emph{shapes} are identical are also the two the language cannot tell apart.
+carried by how the code happens to be written, and by nobody's checking. That row is an \enfD{}
+entry in the ledger of \S\ref{sec:enforcement}.
 
-\subsection*{And this is the morphism}
+\subsection{And this is the morphism}
 
-Put the pieces together and the destination arrives in two lines. A morphism, from
-is $u$ going down and $f$ coming back.
+Put the pieces together and the destination arrives in two lines. A morphism of containers
+$(P,R) \to (Q,T)$ is a pair, and here is the pair. The mapping $u$ goes down. The function $f$
+comes back.
 
 \begin{lstlisting}[language=TS]
 const reply = await lower.run(u(prompt));   // u: the prompt, going down
 return f(prompt, reply);                    // f: the response, coming back
 \end{lstlisting}
 
-The mapping $u$ runs on the way down. Then the function stops. The frame is set aside. The thread goes back to
-the loop. In this implementation the descent is a real one, because a process is spawned and a
-socket is opened. Control genuinely leaves this program. When the reply arrives it resumes this
-frame at this line, and $f$ runs on the way back up.
+The mapping $u$ runs on the way down. Then the function stops. The frame is set aside and the flow
+of control goes back to the loop. In this implementation the descent is a real one, because a
+process is spawned and a socket is opened. Control genuinely leaves this program. When the reply
+arrives it resumes this frame at this line, and $f$ runs on the way back up.
 
 Control down, data up, in one function body, read top to bottom, with the suspension invisible in
-the text. That is the shape the algebra says a morphism has. It is one keyword doing all of it.
+the text. That is what the algebra says a morphism is. It is one keyword doing all of it.
 
+
+\newpage
+
+\section{The tensor combinator}
+\label{sec:combinators}
+
+\subsection{Concurrency is not parallelism}
+
+Awaiting two promises one after the other runs them one after the other. To have both in flight you
+must start both before awaiting either. The operator that does it is \texttt{Promise.all}. It takes
+a list of promises and produces a promise of the list, settling when \emph{all} of them have.
+
+\begin{lstlisting}[language=TS]
+const ask = (ms: number) => new Promise(r => setTimeout(() => r(ms), ms));
+
+let t = performance.now();
+await Promise.all([ask(100), ask(100)]);
+console.log("both in flight     ", Math.round(performance.now() - t), "ms");
+
+t = performance.now();
+await ask(100);
+await ask(100);
+console.log("one after the other", Math.round(performance.now() - t), "ms");
+\end{lstlisting}
+
+The call \texttt{performance.now} reads a clock, in milliseconds, so the difference between two
+readings is how long the lines between them took.
+
+\begin{lstlisting}[language=SH]
+$ deno run d3.ts
+both in flight      103 ms
+one after the other 204 ms
+\end{lstlisting}
+
+Nothing ran in parallel in either line. There is one flow of control. What differs is whether the
+two waits overlap. This is also the first point at which two prompts exist at the same time, which
+is what makes a combinator possible at all.
+
+\subsection{The tensor combinator}
+
+Here again is the line that put both prompts in flight.
+
+\begin{lstlisting}[language=TS]
+await Promise.all([ask(100), ask(100)]);
+\end{lstlisting}
+
+Read it with the container algebra in front of you. Both sides are prompted. \emph{Both replies are owed.} If either rejects, the whole thing rejects. There is no
+outcome in which one answer arrives and the other is excused. That is the tensor, exactly.
+
+\newpage
 
 \section{The enforcement question}
 \label{sec:enforcement}
 
-One shape has recurred at every level of the stack just described. \textbf{A prompt determines the
+One pattern has recurred at every level of the stack just described. \textbf{A prompt determines the
 type of its response.} That is the container of the introduction, and it was there five times.
 In a system call. In a pipe. In a command-line tool. In an HTTP exchange. In a handler table.
 
-What changed from level to level was never the shape. It was only ever the answer to one question.
+What changed from level to level was never the pattern. It was only ever the answer to one question.
 This section is about asking it systematically.
 
 \begin{center}
@@ -1439,7 +1866,7 @@ For a reader who spends their working life distinguishing what is proved from wh
 what is merely believed, this is the only question about the implementation worth asking. The
 answer is not a single verdict. It is a ledger.
 
-\subsection*{Three kinds of guarantee}
+\subsection{Three kinds of guarantee}
 
 Everything in this note falls into one of three classes. The note marks them with these badges
 from here onwards.
@@ -1463,7 +1890,7 @@ from here onwards.
 The distinction that matters most is not \enfC{} against \enfR. It is \enfR{} against \enfD. A
 \enfR{} failure is a value in a program. A \enfD{} failure is a plausible number in a report.
 
-\subsection*{The ledger of the stack}
+\subsection{The ledger of the stack}
 
 Reading down, the enforcement gets stronger and it gets narrower.
 
@@ -1490,7 +1917,7 @@ The two ends of that table are worth stating as a pair. Neither can be dispensed
 reaches the other.
 
 \textbf{The kernel checks everything and understands nothing.} It will not let a process read a
-file its user may not read. The enforcement is in the processor's mode bit rather than in any
+file its user may not read. The enforcement is in the physical processor's mode bit rather than in any
 convention. There is no way to write the violating program. And it has no opinion whatever about
 whether the bytes in that file mean anything.
 
@@ -1502,7 +1929,7 @@ So the engineering is all at the handovers. The middle three rows are where the 
 handovers live. From a pipe to a program. From a program to a network. From the network back into
 the type system.
 
-\subsection*{Where $R$ stops depending on $P$}
+\subsection{Where $R$ stops depending on $P$}
 \label{sec:rdep}
 
 There is a way of reading the ledger that makes it one statement instead of five. It is the
@@ -1583,7 +2010,7 @@ now check that claim against the table. A better language improves the
 bottom row of that column, \enfC. It cannot touch the floor. The floor is not a type system that
 could be improved. It is the absence of one.
 
-\subsection*{The trusted base}
+\subsection{The trusted base}
 
 \enfD{} is not an absence of guarantee. It is a guarantee resting on somebody's care. So it is
 worth naming what is being trusted, in the sense a reader of this note means by the word.
@@ -1625,7 +2052,7 @@ A \texttt{Book} downstream of a correct validator really does have a numeric id.
 downstream of a validator that forgot a field is an assertion the compiler will now defend with
 great rigour for the rest of the program.
 
-\subsection*{The algebra motivates the architecture; it does not verify it}
+\subsection{The algebra motivates the architecture; it does not verify it}
 
 One row of the previous table needs enlarging. A reader from formal verification will otherwise
 assume something this note does not claim.
@@ -1666,7 +2093,7 @@ That distinction is also the answer to a question the next subsection would othe
 the laws were verified, the case for a proof assistant would be much stronger than it is about to
 look.
 
-\subsection*{Why a better type system moves fewer of these rows than one expects}
+\subsection{Why a better type system moves fewer of these rows than one expects}
 
 Consider a proof assistant again, with the ledger in hand. This is where the argument becomes
 arithmetic rather than assertion.
@@ -1706,7 +2133,7 @@ data flowing back up. That is a fact about processes, and about a suspended func
 It is enforced by the kernel and by an event loop. The reader will find it holds up rather better
 than the parts a compiler was responsible for.
 
-\subsection*{What is still to be decided}
+\subsection{What is still to be decided}
 
 Three questions remain open at this point in the note. Each is settled by the implementation
 rather than by the stack.
@@ -1721,6 +2148,8 @@ rather than by the stack.
 
 The game comes first. The answers only mean something once there is something at stake in them.
 
+
+\newpage
 
 \section{The game}
 \label{sec:game}
@@ -1823,7 +2252,7 @@ harvest comes in graded, and you dispose of it knowing exactly what it was. A qu
 against a harvest that fails in August is not a game mechanic. It is how a famine is administered.
 Five years is ten decisions, and then a reckoning.
 
-\subsection*{Why the two costs are not independent}
+\subsection{Why the two costs are not independent}
 
 Combat power in 1941 is
 \[
@@ -1841,7 +2270,7 @@ starved in 1932 is a soldier missing in 1941. So squeezing harder to build steel
 the steel was meant to protect. Push far enough and you lose the war holding the largest stockpile
 in Europe.
 
-\subsection*{Build them or buy them}
+\subsection{Build them or buy them}
 
 There are two roads to a tractor, and choosing between them is most of the early game.
 
@@ -1852,7 +2281,7 @@ forever. Four steps, and the first tractor is years away.
 \textbf{Buy them.} Ten in hard currency each, ready to drive. They need no engineer, no mill and no
 works. They build none of those either. Every one is bought again next time.
 
-\subsection*{Seven plans}
+\subsection{Seven plans}
 
 A plan keeps its letter for the whole game. So a sequence of ten letters is a strategy, and the
 space can be searched directly. All seven below were run at seed 1928. The numbers are what came
@@ -1895,7 +2324,7 @@ same brutality with a railway, for the same industrial result.
 tie at four. By everyone lost, gentle armament wins outright at nine, while no railway comes third
 at twenty-nine. The game keeps both numbers and does not say which is the real one.
 
-\subsection*{The plan the game was built around, and the one that beats it}
+\subsection{The plan the game was built around, and the one that beats it}
 
 The design intent was that \emph{brutalist mechanisation} should be optimal. Starve the villages
 early. Spend it on rail, engineers and tractors. Then turn the surplus into an army. It is morally
@@ -1922,10 +2351,12 @@ $\to$ mill $\to$ steel $\to$ armaments. Nine links, each costing at least a turn
 in the whole plan. The mechanised economy matures in 1932, and then the plan ends. This is recorded
 as a failing test in \texttt{calibrate.ts} rather than quietly redefined.
 
+\newpage
+
 \section{How the game is implemented}
 \label{sec:impl}
 
-\subsection*{Five servers, and why they are servers}
+\subsection{Five servers, and why they are servers}
 
 The game runs as five programs, each listening on a port. The player talks only to the Plan. The
 Plan delegates to the four commissariats beneath it.
@@ -1983,7 +2414,7 @@ The cost is written down too. It is about a fifth of a second per hop, which a h
 pays forty times per game. Hence an environment variable that keeps the HTTP hop and skips only the
 process spawn. No game a player sees uses it.
 
-\subsection*{The game as a composite}
+\subsection{The game as a composite}
 
 Each turn is one of the four compositions. Which one it is makes a claim about the year, rather
 than being a detail of the code.
@@ -2012,7 +2443,7 @@ appears instead as each container's own shape type, a tagged union, whose elimin
 \texttt{switch} in every server. That is a coproduct doing real work. Calling it a use of the
 combinator would be an overstatement.
 
-\subsection*{What crosses, and what the status code says}
+\subsection{What crosses, and what the status code says}
 
 Every hop is a \texttt{POST} to a port with a JSON body, and the reply is JSON. The path is
 unused. The port identifies the container. The three outcomes are genuinely different kinds of
@@ -2064,7 +2495,7 @@ reason given in the source is worth adopting generally. \emph{The depth rides in
 than in the prompt, because the prompt is the container's shape, and nothing that isn't a prompt
 belongs in it.}
 
-\subsection*{A hop is a CLI tool}
+\subsection{A hop is a CLI tool}
 
 The program that carries a prompt to the next level is forty lines long, and knows nothing about
 the game.
@@ -2099,7 +2530,7 @@ Indentation is the depth counter. The arrow \texttt{↓} is control flowing down
 \texttt{↑} is data flowing back up. That is a derivation tree of container morphisms, printed by a program that had no idea it
 was doing that.
 
-\subsection*{Where the compiler carries a rule of the game}
+\subsection{Where the compiler carries a rule of the game}
 
 Two rules are enforced by the type checker rather than validated at run time. Both work by the
 trick from §\ref{sec:tssyntax}, a conditional type over a finite union.
@@ -2128,7 +2559,7 @@ Both work only because the index set is finite. A rule over tonnages could not b
 The same rule over \emph{grades} can. That is also how the apparatus actually worked. Quotas were
 set against reported categories, never against measured tonnes.
 
-\subsection*{The one thing that cannot cross}
+\subsection{The one thing that cannot cross}
 
 Of everything JSON leaves out, one omission bites structurally rather than merely requiring care.
 A function cannot be serialised. And the shape of $\lhd$ is a first prompt together with a function
@@ -2142,7 +2573,7 @@ The wire format is not neutral about which combinators can be sent and which mus
 locally. This is the sharpest example in the repository of a mathematical structure meeting a
 transport and losing an argument.
 
-\subsection*{What the reports are worth}
+\subsection{What the reports are worth}
 
 Each commissariat holds two things the Plan cannot see. How well it is actually doing. And how
 much it inflates its dispatches. The Plan keeps the true ledger for grain, because the grain
@@ -2157,7 +2588,7 @@ exactly nothing about its truth. A validator can establish that a reply is a wel
 No validator can establish that the number in it is the number that happened. The reckoning prints
 both columns and leaves the reader to notice.
 
-\subsection*{And where the protocol is not doing the work}
+\subsection{And where the protocol is not doing the work}
 
 One last piece of honesty. HTTP is stateless and these servers are not. Each keeps its books at
 module scope, in the process. That is defensible. A commissariat \emph{is} a stateful thing, and
@@ -2204,7 +2635,7 @@ const reply = await lower.run(u(prompt));   // the prompt, going down
 return f(prompt, reply);                    // the response, coming back
 \end{lstlisting}
 
-\subsection*{The response flows backwards}
+\subsection{The response flows backwards}
 
 That is the part worth dwelling on. Control flows \emph{down}. A handler is woken by a prompt. It
 computes a lower-level prompt with $u$, and fires it. In this implementation that means spawning a
