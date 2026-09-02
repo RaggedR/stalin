@@ -117,8 +117,8 @@
 
 \begin{center}
 \begin{minipage}{0.88\linewidth}\small\itshape
-\textbf{Disclaimer.} I am not an expert at Unix, or at web app development, or at container
-combinators, so these notes are just as much for myself as for anybody else.
+\textbf{Disclaimer.} I am not an expert at Unix, or at web app development, so these notes are
+just as much for myself as for anybody else.
 \end{minipage}
 \end{center}
 \vspace{1mm}
@@ -128,15 +128,14 @@ combinators, so these notes are just as much for myself as for anybody else.
 \begin{sectionbox}
 Neil Ghani's \emph{Containers for Typed Agentic AI} describes an algebra of interfaces. An
 interface is a pair. The first half is the prompts you may send. The second half gives, for each
-prompt, the type of reply that would answer it. Such interfaces compose, in four different ways,
-all of which appear in this game.
+prompt, the type of response that would answer it. Such interfaces compose, in four different ways.
+Three of them appear in this game.
 
 Container theory arose out of dependent type theory, and ``playing around'' with containers is
 usually done in a language such as Idris or Lean. This is not what we do in these notes. Instead we
 ``fake'' dependent types using Unix CLI tools and TypeScript \texttt{async} event handlers.
 
-The division of labour between those two is exact, and to say why we need one definition from the
-theory. A \emph{morphism} of containers $(P,R) \to (Q,T)$ is a pair of functions
+The division of labour between those two is exact. First, the definition. A \emph{morphism} of containers $(P,R) \to (Q,T)$ is a pair of functions
 \[
   u : P \to Q
   \qquad\qquad
@@ -153,18 +152,268 @@ And each of our two ordinary things supplies exactly one of those flows.
 This works because a command-line tool is already a container. It receives one prompt, its
 argument vector. It produces a response whose \emph{type depends on which prompt it was}.
 
-For example. The command \texttt{git log} answers with a list of commits. The command
-\texttt{git status} answers with a working tree. Those are not the same kind of thing, and which
-kind you get is fixed by the word after \texttt{git}. That is $(p : P) \to R\,p$, with $P$ the
-subcommands and $R$ the result type of each. The interface $(P, R)$ is what \texttt{--help}
-prints.
-
 \textbf{TypeScript \texttt{async} event handlers:} The backwards map $f$ on positions is
-implemented with TypeScript \texttt{async} event handlers. Each TypeScript \texttt{async} event
-handler ``hangs'' on the result of the next TypeScript \texttt{async} event handler in the chain.
-When a ``leaf'' at the end of the chain finally evaluates to an actual response, this response
-``propagates backwards'' up the chain of TypeScript \texttt{async} event handlers.
+implemented with TypeScript \texttt{async} event handlers.
+
+This works because in a web app control has been inverted. An ordinary program calls a second
+function and that second function returns an answer. Here the event loop is passed the function as
+an argument. The function delegates to a second function, and then it hands control back to the
+event loop before it has an answer of its own.
+
+So the two halves of a morphism are the two directions of control, and they are separate acts. The
+mapping $u$ runs while your code has control. The function $f$ runs after control has been given
+away and handed back. In an ordinary function call there would be nothing to tell them apart.
 \end{sectionbox}
+
+\begin{orestisbox}
+\textbf{Typed agents.} Note that the Claude Code harness is itself a CLI tool, and thus a
+container. We can
+simply ``plug in'' the \texttt{claude} binary as our CLI tool and all the machinery developed in
+this note works exactly the same.
+\end{orestisbox}
+
+\begin{pinkbox}
+\textbf{A note on formal verification.} The architecture of the game is motivated by Ghani's theory
+of container combinators, but the design is not formally verifiable. This was never the point. It
+is a ``fake'', but it is a fake that works.
+\end{pinkbox}
+
+\newpage
+
+\tableofcontents
+
+\newpage
+
+\section{The game}
+\label{sec:game}
+
+The purpose of this game is to illustrate Ghani's theory of container combinators for
+event-driven programming. The game is the example. The algebra is the subject. As yet there is no
+``typed agent'' in the game, but all the machinery has been built to easily add one. This is the
+obvious next step.
+
+Recall the four combinator operators, defined by Ghani in \emph{Containers for Typed Agentic AI}.
+The tensor $\boxtimes$ prompts both sides
+and requires a response from each. The sequential $\lhd$ prompts one side, and computes the second
+prompt from the first response. The product $\times$ offers both sides and takes a response from
+exactly one.
+
+The sum $+$ takes a prompt belonging to one side or the other, and answers with that side's own
+response. It is routing. We only use the first three in this game. Adding routing to the game is
+another future project.
+
+This is a game about Stalin and his First Five-Year Plan. You are given the Soviet Union in 1928
+and five years to industrialise it. You must also win the war in 1941.
+
+This was a tragic episode of history and I don't wish to make light of the story. It is for
+illustrative purposes only. It is also a history lesson.
+
+\vspace{6mm}
+
+\begin{center}
+\begin{tikzpicture}
+
+% --- SPRING: tensor ---
+\node[plan] (sow) {Sow};
+\node[lbl, above=1mm of sow] {spring};
+\node[op, draw=tensor, text=tensor] (t1) [right=14mm of sow] {$\boxtimes$};
+\node[srv] (agri)  [above right=8mm and 20mm of t1] {agriculture: Harvest};
+\node[srv] (mill)  [right=20mm of t1]               {industry: Smelt};
+\node[srv] (rail)  [below right=8mm and 20mm of t1] {transport: Lay};
+\draw[ar] (sow) -- (t1);
+\draw[ar] (t1) -- (agri);
+\draw[ar] (t1) -- (mill);
+\draw[ar] (t1) -- (rail);
+\begin{scope}[on background layer]
+\node[fit=(t1)(agri)(mill)(rail), draw=tensor, dashed, rounded corners=3pt,
+      inner sep=2.8mm, label={[capt, text=tensor, align=center]below:%
+      the tensor\\[-0.4mm]
+      {\normalfont\itshape\tiny three sectors, one year. All three must answer}}] {};
+\end{scope}
+
+% --- AUTUMN: seq ---
+\node[plan] (reap) [below=32mm of sow] {Reap};
+\node[lbl, above=1mm of reap] {autumn};
+\node[op, draw=seq, text=seq] (s1) [right=14mm of reap] {$\lhd$};
+\node[srv] (rail2) [right=18mm of s1]    {transport: Haul};
+\node[srv] (trade) [right=22mm of rail2] {trade: SellGrain};
+\draw[ar] (reap) -- (s1);
+\draw[ar] (s1) -- (rail2);
+\draw[ar] (rail2) -- (trade);
+\begin{scope}[on background layer]
+\node[fit=(s1)(rail2)(trade), draw=seq, dashed, rounded corners=3pt,
+      inner sep=2.8mm, label={[capt, text=seq, align=center]below:%
+      sequential composition\\[-0.4mm]
+      {\normalfont\itshape\tiny what you may sell is decided by what the railway moved}}] {};
+\end{scope}
+
+% --- PRODUCT ---
+\node[op, draw=prod, text=prod] (p1) [below=30mm of s1] {$\times$};
+\node[srv] (tract) [above right=7mm and 24mm of p1] {industry: BuildTractors};
+\node[srv] (arms)  [below right=7mm and 24mm of p1] {industry: BuildArmaments};
+\draw[ar] (reap) |- (p1);
+\draw[ar] (p1) -- (tract);
+\draw[ar] (p1) -- (arms);
+\begin{scope}[on background layer]
+\node[fit=(p1)(tract)(arms), draw=prod, dashed, rounded corners=3pt,
+      inner sep=2.8mm, label={[capt, text=prod, align=center]below:%
+      the product\\[-0.4mm]
+      {\normalfont\itshape\tiny both are asked. Exactly one answers, because there is one stock of steel}}] {};
+\end{scope}
+
+\end{tikzpicture}
+\end{center}
+
+\vspace{6mm}
+
+\section{The prompt}
+
+I am an agentic engineer. I generate code using agentic coding agents such as Claude Code, Grok and
+Codex. The following description is a rough approximation of the prompt I gave Claude to build the
+game.
+
+\textbf{You want to build tractors.} The peasants are starving. More tractors means more grain, and
+peasants can be moved off the land to work on railways and in steel mills.
+
+\textbf{You need steel to build tractors.} You also need steel to build armaments. Steel needs a
+mill. A mill needs a German engineer.
+An engineer has to be paid in hard currency. Hard currency comes from selling grain to the USA.
+
+\textbf{You need to build railways.} You cannot sell the grain without railways. Railways need steel too, but they are not capital. They are \emph{throughput}. Grain the railway cannot
+move rots at the sidings, whatever the harvest was. So track comes before tonnage. This is the
+sequential operator $\lhd$. What may be sold is computed from what the railway managed to move.
+
+\textbf{You can buy tractors and steel.} But this will not mechanise the country.
+
+\textbf{You must prepare for war.} In 1941 the country is invaded. Peasants serve as the soldiers, so the same population is both the workforce and
+the army. Steel not spent on tractors or train tracks can be spent on armaments instead. Fight with too
+little steel and you win by sending more men. Fight with more steel and send fewer peasants to die. Fail to arm at
+all and no amount of mechanisation saves you.
+
+\textbf{You must also feed the peasants.} The labour force is one pool of people. They can work the
+fields, drive the tractors, work the mill or lay the track. But everyone eats, and only the first
+two grow anything. That is why moving a peasant into the mill costs you twice.
+
+\textbf{The Soviet Union is a centrally planned economy.} How hard the villages are squeezed is a decision
+you make every spring. What is not taken is what
+they eat. Starvation in this game is not a scoring gimmick. It is the direct arithmetic consequence
+of the extraction and investment decisions made each spring and autumn, which is what it was for
+Stalin.
+
+\textbf{There are three goals.} Mechanise the country, win the war, and starve as few people as
+possible.
+
+
+\newpage
+
+\section{Strategy}
+\label{sec:strategy}
+
+The game is more complex than it sounds, which is why Ghani's theory of container combinators comes
+in handy.
+
+The game has been built, by Claude Code, and is playable. Just pull the repo and type
+\texttt{./play}.
+
+\begin{center}
+\texttt{github.com/RaggedR/stalin}
+\end{center}
+
+\textbf{There are various strategies.} They disagree with each other. What follows is what happens when you try them.
+
+\textbf{A year is two turns, spring and autumn.} In \emph{spring} you fix where the hands go and
+how hard the villages are squeezed, \emph{before} you know the weather. In \emph{autumn} the
+harvest comes in graded, and you dispose of it knowing exactly what it was. A quota set in March
+against a harvest that fails in August is not a game mechanic. It is how a famine is administered.
+Five years is ten decisions, and then a reckoning.
+
+\subsection{Why the two costs are not independent}
+
+Combat power in 1941 is
+\[
+  m \cdot \mathrm{manPower} \;+\; \mathrm{steelPower} \cdot \sqrt{W \cdot m}
+\]
+for $m$ men and $W$ tonnes of war reserve. A man is worth something holding nothing. A shell is
+worth nothing with nobody to fire it. And the second term grows as a square root, so the more steel
+each man already carries, the less the next tonne adds.
+
+Men and steel are therefore complements, and partly substitutes. The same victory can be bought
+with more of one or more of the other. The price of the second is paid in lives.
+
+The trap is that extraction feeds both sides of that expression with opposite signs. A peasant
+starved in 1932 is a soldier missing in 1941. So squeezing harder to build steel shrinks the army
+the steel was meant to protect. Push far enough and you lose the war holding the largest stockpile
+in Europe.
+
+\subsection{Build them or buy them}
+
+There are two roads to a tractor, and choosing between them is most of the early game.
+
+\textbf{Build them.} Hard currency buys a German engineer. The engineer raises the mill. The mill
+makes steel. Twenty spare tonnes of steel opens the works. The works makes twenty tractors a year
+forever. Four steps, and the first tractor is years away.
+
+\textbf{Buy them.} Ten in hard currency each, ready to drive. They need no engineer, no mill and no
+works. They build none of those either. Every one is bought again next time.
+
+\subsection{Seven plans}
+
+A plan keeps its letter for the whole game. So a sequence of ten letters is a strategy, and the
+space can be searched directly. All seven below were run at seed 1928. The numbers are what came
+out of the terminal.
+
+\begin{center}\small
+\begin{tabular}{@{}llrrrrrl@{}}
+\toprule
+strategy & letters & tractors & armaments & starved & fallen & \textbf{dead} & outcome \\
+\midrule
+gentle armament   & \texttt{AJBEBJAJAJ} &  2 & 89 &  5 &  4 & \textbf{9}  & won \\
+brutalist mech.   & \texttt{CMKEBIBJNJ} & 22 & 80 & 14 &  5 & \textbf{19} & won, mechanised \\
+no railway        & \texttt{KABEBIBJAJ} & 22 & 82 & 25 &  4 & \textbf{29} & won, mechanised \\
+partial armament  & \texttt{CABEBINJAA} & 42 & 34 & 21 & 14 & \textbf{35} & won, mechanised \\
+totally brutal    & \texttt{KJBEAJBJAJ} &  2 & 78 & 44 &  5 & \textbf{49} & won \\
+bought tractors   & \texttt{AMAMAFAMAF} & 18 &  0 &  3 & 57 & \textbf{60} & \emph{lost} \\
+never armed       & \texttt{CAKEBINIAI} & 62 &  0 & 15 & 52 & \textbf{67} & \emph{lost} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\vspace{5mm}
+
+\textbf{Never arming loses.} A beautifully mechanised country falls in 1941. Sixty-two tractors and
+the largest harvest on the board. But no more Russia.
+
+\textbf{Buying the tractors abroad is the humane road, and it is fatal.} Three starve, the fewest
+of any line. But imported tractors build no mill, no engineers and no steel. So there is nothing to
+arm with, and Russia is destroyed.
+
+\textbf{Partial armament wins and bleeds.} Thirty-four tonnes is enough to win. It is not enough to
+win cheaply. Fourteen fallen, against the best line's four. The war curve is smooth, so half an
+army is a victory paid for in men.
+
+\textbf{The railway should come before the steel.} Grain the railway cannot move rots at the sidings.
+Peasants starve. The total number of dead is still less for no railway than for partial armament,
+because steel which would have been invested in the railway is invested in armaments.
+
+\textbf{Total brutality.} Starving the peasants to build the army wins the war. But it also fails
+to mechanise the country.
+
+\subsection{A surprise}
+
+The parameters of the game were tuned, by Claude Code, so that the \emph{brutalist mechanisation}
+strategy would be optimal. Starve the villages
+early. Spend it on rail, engineers and tractors. Then turn the surplus into an army. This was
+Stalin's strategy. It is morally uncomfortable and it was supposed to win.
+
+It does not. At least not in terms of total numbers dead. The plan \texttt{AJBEBJAJAJ} wins for
+nine dead by doing almost nothing. It was found by
+machine search over the menu rather than by hand. Put hands in the mill. Buy the Germans once. Then
+smelt straight into armaments for four years. No railway. No tractors on purpose. And no famine
+beyond the baseline five who die whatever you do.
+
+But with this strategy the country is still not mechanised at the end of the war. Only two
+tractors.
+
 
 \newpage
 
@@ -620,8 +869,8 @@ Strip the loop away and this is what remains.
 Now the qualification, and it is sharp enough to be worth the paragraph. That reading is
 \emph{correct}, and it is entirely ours. Ask what the machine sees and the answer is that
 \texttt{git} received an array of strings and produced a sequence of bytes on descriptor~1, and
-that this is true of every subcommand equally. There is no level at which the reply to
-\texttt{git log} and the reply to \texttt{git status} have different types, because at the only
+that this is true of every subcommand equally. There is no level at which the response to
+\texttt{git log} and the response to \texttt{git status} have different types, because at the only
 level Unix knows about they have the \emph{same} type, which is bytes.
 
 Put it in the notation of containers. The container Unix actually implements is
@@ -667,7 +916,7 @@ prompt, decides which commands to run, forks and execs them, reads what they wro
 You can set him up with limited privileges, a handful of CLI tools that he has permission to
 operate and nothing else.
 
-Now think of him as a container. The prompts you may send are the things you may ask for. The reply
+Now think of him as a container. The prompts you may send are the things you may ask for. The response
 you get back has a type that depends on which prompt you sent. And the interface is the list of
 tools he is permitted to use.
 \end{sectionbox}
@@ -880,6 +1129,11 @@ head twister, and it bears almost no resemblance to Haskell or Lean.
 
 \item The signature \texttt{<T, R>(x: T) => R} is a generic function.
 
+\item The keyword \texttt{export} in front of a definition means that other files may use it.
+      Without it, the definition is private to its own file. This is an unhappy collision with the
+      shell's \texttt{export} of \S\ref{sec:unix}, which adds a variable to the environment.
+      The two have nothing to do with each other.
+
 \end{itemize}
 \end{listbox}
 
@@ -901,6 +1155,28 @@ head twister, and it bears almost no resemblance to Haskell or Lean.
 
 \end{itemize}
 \end{listbox}
+
+\newpage
+
+\subsection{Type guards}
+\label{sec:guards}
+
+The notation \texttt{u as T} above asserts a type and checks nothing. There is a second notation
+that checks, and it is the one the wire code in this note is built on.
+
+\begin{lstlisting}[language=TS]
+export const isRecord = (u: unknown): u is Record<string, unknown> =>
+  typeof u === "object" && u !== null && !Array.isArray(u);
+\end{lstlisting}
+
+The word \texttt{is} is a keyword. It may appear only in the return type of a function, written
+\texttt{u is T} where \texttt{u} is one of that function's own parameters. It says that the function
+returns a boolean, and that a true answer means \texttt{u} is a \texttt{T}. A function declared that
+way is called a \emph{type guard}.
+
+At run time this changes nothing. At compile time the checker narrows \texttt{u} to \texttt{T}
+wherever the answer was true. Every validator in \S\ref{sec:unusual} and in the
+game's wire code is a function declared this way.
 
 \newpage
 
@@ -1186,6 +1462,7 @@ checker knows the name is \texttt{"id"} again, so \texttt{FieldType<"id">} is \t
 more. §\ref{sec:impl} pays exactly that price, and a type assertion in each branch on top of it.
 
 \subsection{Mapped types, which make a table total}
+\label{sec:mapped}
 
 The second construct to go slowly over is the one that builds a record with a field for every
 member of a union.
@@ -1239,7 +1516,7 @@ compile.
 There is no default branch to fall through and no dispatch to forget. A whole class of mistake
 becomes unwritable rather than merely untested.
 
-That is the second half of the trick. A conditional type says what the answer to each prompt should
+That is the second half of the trick. A conditional type says what the response to each prompt should
 be. A mapped type insists that every prompt has one. Together, over a finite union, they are a
 dependent function written as a table, and §\ref{sec:impl} builds the game's five servers out of
 exactly this.
@@ -1405,7 +1682,7 @@ block. Every operation that would have waited is written in three parts instead.
 \begin{enumerate}\setlength{\itemsep}{2pt}
 \item \textbf{Start it.} Ask for the thing, and do not wait for it.
 \item \textbf{Give the flow of control back.} Stop, so that the other conversations can be served.
-\item \textbf{Arrange to be resumed.} Leave behind what should happen when the answer arrives.
+\item \textbf{Arrange to be resumed.} Leave behind what should happen when the response arrives.
 \end{enumerate}
 
 Something has to hold those arrangements. That something is the \emph{event loop}. It is a set of
@@ -1443,7 +1720,7 @@ Deno.serve({ port: 8099 }, async (req) => {
 });
 \end{lstlisting}
 
-Three lines of that are the handler. The rest builds a reply.
+Three lines of that are the handler. The rest builds a response.
 
 The keyword \texttt{await} appears three times and the keyword \texttt{async} twice.
 Section~\ref{sec:awaitreally} is about what they do. Until then, read \texttt{await} as the point at
@@ -1465,9 +1742,9 @@ content-type: application/json
 {"error":"not a prompt I accept","got":{"tag":"Nonsense"}}
 \end{lstlisting}
 
-Two things in that handler matter for everything below. The reply is computed from the prompt, so
+Two things in that handler matter for everything below. The response is computed from the prompt, so
 what comes back depends on what went in. And the function stops twice before it answers, once for
-the request body and once for the reply, which is the reason a loop has to exist at all.
+the request body and once for the response, which is the reason a loop has to exist at all.
 
 \newpage
 
@@ -1498,7 +1775,7 @@ a name.
 \toprule
 \texttt{Promise<T>} & a computation of a \texttt{T} that has not finished yet \\
 \midrule
-\emph{pending}   & no answer yet \\
+\emph{pending}   & no response yet \\
 \emph{fulfilled} & holds a \texttt{T} \\
 \emph{rejected}  & holds an error \\
 \bottomrule
@@ -1638,6 +1915,7 @@ child runs.
 
 \subsection{Deno can call Claude Code}
 
+\begin{sectionbox}
 Claude himself is a large language model running on Anthropic's servers. The Claude Code harness is
 something else entirely. It is a TypeScript program running on Unix as a CLI tool, and it is the
 only part of the arrangement we can point at.
@@ -1670,8 +1948,9 @@ $ curl -s -X POST http://127.0.0.1:8097/ -d '{"ask":"Reply with exactly the word
 {"reply":"yes"}
 \end{lstlisting}
 
-A prompt arrived over a socket. It went down into a process. A reply came back up and was answered
+A prompt arrived over a socket. It went down into a process. A response came back up and was answered
 with. That is the whole of the game, at one level.
+\end{sectionbox}
 
 \newpage
 
@@ -1683,7 +1962,7 @@ output of this new process is the response.
 
 The process it spawns runs \texttt{delegate.ts}, which is a small CLI tool of the game's own. That
 tool receives a port, a prompt and a depth as its argument vector. It makes one HTTP request to the
-server listening on that port. It writes the reply on standard output and nothing else, so the
+server listening on that port. It writes the response on standard output and nothing else, so the
 caller can parse the whole of what comes back. Its own comment says that this file is the
 mapping $u$, made executable.
 
@@ -1703,86 +1982,206 @@ export async function delegate(
 }
 \end{lstlisting}
 
-The prompt goes down as an argument. The reply comes back on standard output. So one hop costs one
+The prompt goes down as an argument. The response comes back on standard output. So one hop costs one
 process, which is deliberate. The boundary is a real one rather than a function call wearing a
 costume.
 
-\begin{orestisbox}
-A reminder from \S\ref{sec:cond}. The keyword \texttt{extends} means \emph{is a subtype of}, and it
-does two different jobs with that answer.
+\begin{sectionbox}
+The key point of all of this is that Claude is just another CLI tool, and thus just another
+container. Our example game \texttt{stalin} does not yet include a typed agent, but all the
+machinery is here to add one. Perhaps a corrupt
+commissariat who has some ideas of his own about how to run the country.
+\end{sectionbox}
 
-In \texttt{<T extends ...>} it is a requirement. Whatever \texttt{T} turns out to be, it must be a
-subtype of what follows. Nothing is computed.
+\newpage
 
-In \texttt{T extends X ? A : B} it is a question, and the answer chooses a type. That is the
-conditional type, and it is what writes down the second half of a container, meaning for each
-prompt the type of the reply.
+\section{A container in TypeScript}
+\label{sec:contts}
 
-Only the first of the two appears below. The second is what \S\ref{sec:impl} is built on.
-\end{orestisbox}
+\begin{pinkbox}
+A container is a pair. The prompts it accepts, and for each prompt the type of its response.
+Writing the second half down is the difficulty, because a response type depends on a value.
 
-Now the game's \texttt{delegateAll} is one line, and its comment says so.
+TypeScript has no dependent pairs. It does not need them here, and the reason is that the prompts
+are finite. Over a finite index a dependent sum is a union.
+\[
+  \Sigma_{s : S} B\,s \;=\; \bigcup_{s \in S} \{s\} \times B\,s
+\]
+So a container is presented not as a pair of types, but as the union of its pairs, one pair for
+each prompt. The game calls one such pair a \emph{fibre}.
 
 \begin{lstlisting}[language=TS]
-/** Fire several prompts at once and require a reply from each -- the tensor's defining move. */
-export const delegateAll = <T extends readonly [number, unknown][]>(
-  calls: T, depth: number,
-): Promise<unknown[]> =>
-  Promise.all(calls.map(([port, prompt]) => delegate(port, prompt, depth)));
+export interface Fib<S, P> {
+  readonly shape: S;   // one prompt
+  readonly pos: P;     // the response to that prompt
+}
 \end{lstlisting}
 
-That line needs unpacking.
+No value of that type is ever built. It exists to hold two types together. A container is a union
+of them, and here is one with two prompts.
+
+\begin{lstlisting}[language=TS]
+type ShelfC =
+  | Fib<{ tag: "Book"; id: number }, Book>
+  | Fib<{ tag: "Count" }, number>;
+\end{lstlisting}
+
+Both halves are now written down. What remains is to read them back out, and that is what the two
+names in the next section do.
+
+\begin{lstlisting}[language=TS]
+export type Shape<C> = C extends Fib<infer S, unknown> ? S : never;
+
+export type PosAt<C, S> =
+  C extends Fib<infer S1, infer P> ? (S extends S1 ? P : never) : never;
+\end{lstlisting}
+
+The keyword \texttt{infer} names a type the checker is to work out for itself. So the first
+definition says this. If \texttt{C} is a fibre over some prompt type, call that type \texttt{S} and
+give it back. A conditional type distributes over a union, so asking it of the whole union gives
+the union of the prompts.
+
+The second definition asks two questions rather than one. Is \texttt{C} a fibre? If so, call its
+prompt type \texttt{S1} and its response type \texttt{P}. Then, does the prompt \texttt{S} you are
+holding lie in that fibre? If it does, give back \texttt{P}. If it does not, give back
+\texttt{never}.
+
+Distributing over the union asks that of every fibre. All but one answer \texttt{never}, and
+\texttt{never} contributes nothing to a union, so exactly one response type survives. That is the
+dependent lookup, and it is exact because the prompts are disjoint.
+
+The direction of the second test is worth noticing. It is \texttt{S extends S1} and not the other
+way round. A prompt you actually hold is usually narrower than its fibre's declared prompt type,
+because it carries a literal tag and particular fields. What you want is the fibre it lies in.
+
+\begin{lstlisting}[language=TS]
+Shape<ShelfC>
+PosAt<ShelfC, { tag: "Count" }>
+PosAt<ShelfC, { tag: "Book"; id: number }>
+\end{lstlisting}
+
+The first is the two prompts, which is a tagged union in the sense of \S\ref{sec:structural}. The
+second is \texttt{number}. The third is \texttt{Book}. Those two are conditional types in the sense
+of \S\ref{sec:cond}, and each keeps the one fibre whose prompt it was asked about.
+
+That pair of definitions is the ``fake'' the introduction promised. The dependency is real, in that a response
+type is computed from a prompt. It is bought with a union and a conditional type rather than with a
+dependent sum, and it works because the prompts are finite and carry tags.
+\end{pinkbox}
+
+\newpage
+
+\section{Runners}
+\label{sec:runner}
+
+A \emph{runner} is a container you can send a prompt to.
+
+So far a container has been a pair of types. To actually send a prompt you need one thing more,
+namely where the thing that will answer is listening. A runner is a container together with the
+means of reaching it.
+
+\begin{lstlisting}[language=TS]
+export interface Runner<C> {
+  readonly label: string;
+  run<S extends Shape<C>>(shape: S, depth: number): Promise<PosAt<C, S>>;
+}
+\end{lstlisting}
+
+The field \texttt{label} is a name for the container. It is what a failed validation reports, and
+it turns out to do more than that, which \S\ref{sec:impl} comes back to.
+
+Both names in that type are the ones \S\ref{sec:contts} defined.
+
+Now read the type of \texttt{run}. It takes a prompt, which must be one the container accepts. It
+gives back a promise of the response that this container gives to that prompt. So the second half of
+a container, meaning for each prompt the type of its response, is written down here and checked by the
+compiler.
+
+\subsection{Decoders}
+\label{sec:decoders}
+
+A \emph{decoder} takes an \texttt{unknown} and returns either a value of the type expected or
+\texttt{null}. It is the validate rather than cast discipline of \S\ref{sec:unusual}, applied at
+the one place where untyped bytes enter the program.
+
+A runner needs one decoder for each prompt it accepts, so the decoders come as a table. Take a shelf
+that answers two prompts. A \texttt{Book} prompt is answered with a book, and a \texttt{Count}
+prompt with a number.
+
+\begin{lstlisting}[language=TS]
+const asBook = (u: unknown): Book | null => {
+  if (!isRecord(u)) return null;
+  if (typeof u.id !== "number") return null;
+  if (typeof u.title !== "string") return null;
+  return { id: u.id, title: u.title };
+};
+
+const asCount = (u: unknown): number | null =>
+  typeof u === "number" ? u : null;
+
+const decoders = { Book: asBook, Count: asCount };
+\end{lstlisting}
+
+That is the whole of it. What arrives is \texttt{unknown}. The decoder for that prompt says whether
+it is the response it ought to be, and only then is it treated as one.
+
+\subsection{Pass-through runners}
+
+A \emph{pass-through} runner uses none of the combinator objects. It serves one container on one
+port. It passes the prompt through to the server there, and passes the response back. The game's
+constructor for one of these is called \texttt{leaf}.
+
+\begin{lstlisting}[language=TS]
+export function leaf<C>(label: string, port: number, decoders: Decoders<C>): Runner<C> {
+  return {
+    label,
+    async run<S extends Shape<C>>(shape: S, depth: number): Promise<PosAt<C, S>> {
+      const raw   = await delegate(port, shape, depth);   // unknown, off the wire
+      const value = decoders[shape.tag](raw);             // the decoder for this prompt
+      if (value === null) throw new Error(`${label}: reply did not validate`);
+      return value as PosAt<C, S>;
+    },
+  };
+}
+\end{lstlisting}
+
+The interface in \S\ref{sec:runner} gave \texttt{run} a type and no body. Here is the body. The
+type parameters are the same bookkeeping as before, and what they surround is three lines of work.
+
+The prompt descends, by \texttt{delegate}. What comes back is \texttt{unknown}, because JSON off a
+wire carries no type. The tag of the prompt chooses a decoder, and that decoder either returns a
+response or returns \texttt{null}. Nothing is cast until it has been checked, and a response that does not
+validate throws an error rather than travelling further up.
+
+The argument \texttt{decoders} is a table with one entry for each prompt. Its type is a mapped type
+over the tags, in the sense of \S\ref{sec:mapped}, and it buys exactly two guarantees.
 
 \begin{itemize}\setlength{\itemsep}{2pt}
-\item The type \texttt{[number, unknown]} is a pair. A port number, and a prompt whose type is not
-      yet known.
-\item So the argument \texttt{calls} is a list of such pairs. The word \texttt{readonly} says this
-      function will not alter the list it was handed.
-\item The method \texttt{calls.map} applies a function to every element and collects the results.
-      Here every pair becomes one promise.
-\item The pattern \texttt{([port, prompt])} takes a pair apart in the place where the parameter
-      would be named.
-\item The function \texttt{delegate} fires one prompt at one port and returns a promise of the
-      reply. That is the descent, and it spawns a process.
-\item The operator \texttt{Promise.all} turns the list of promises into one promise of a list.
-\item The number \texttt{depth} is how far down the tower this hop is. It rides along so the trace
-      can indent, and it plays no part in the algebra.
+\item Every prompt has a decoder. A missing one does not compile.
+\item Each decoder returns that prompt's own response type, and no other.
 \end{itemize}
 
-So a list of pairs goes in and one promise of a list of replies comes out. Notice that nothing is
-awaited here. The caller decides when to wait, and until it does, every prompt is in flight.
+Those two together are what a dependent function would have given for free.
 
-\subsection{The other three combinators}
-
-The other three fall out of the same reading.
-
-\begin{center}\small
-\begin{tabular}{@{}lll@{}}
-\toprule
-\textbf{combinator} & \textbf{written as} & \textbf{because} \\
-\midrule
-$\boxtimes$ tensor      & \texttt{await Promise.all([...])} & all are prompted, all replies owed \\
-$\times$ product        & \texttt{await} one of them, chosen & both offered, exactly one answers \\
-$\lhd$ sequential       & \texttt{await} $a$, then \texttt{await} $b(\text{reply})$
-                        & the second prompt is computed from the first reply \\
-$+$ sum                 & a \texttt{switch} on the tag & one side or the other \\
-\bottomrule
-\end{tabular}
-\end{center}
-
-The third row is only expressible because \texttt{await} returns a value. The second prompt is
-computed from the first reply.
-
-The middle row is the honest one. Nothing in \texttt{Promise} enforces that exactly one of the two
-is awaited. The code simply awaits one. The claim that this is a product rather than a tensor is
-carried by how the code happens to be written, and by nobody's checking. That row is an \enfD{}
-entry in the ledger of \S\ref{sec:enforcement}.
+And notice what became of the response type. It never crossed the wire. Only the prompt went down. The
+response type was recovered on this side, by the runner, which knew which prompt it had sent.
 
 \subsection{And this is the morphism}
 
-Put the pieces together and the destination arrives in two lines. A morphism of containers
-$(P,R) \to (Q,T)$ is a pair, and here is the pair. The mapping $u$ goes down. The function $f$
-comes back.
+Put the pieces together and the destination arrives in two lines. Here again is the definition from
+the introduction. A \emph{morphism} of containers $(P,R) \to (Q,T)$ is a pair of functions
+\[
+  u : P \to Q
+  \qquad\qquad
+  f : (p : P) \to T\,(u\,p) \to R\,p .
+\]
+The mapping $u$ takes a prompt of the upper container to a prompt of the lower one. The function
+$f$ takes a response to that lower prompt, and a record of which upper prompt was sent, and gives a
+response to the upper prompt. So $u$ goes down and $f$ comes back.
+
+One name is needed to write that down. The name \texttt{lower} is a runner for the lower container,
+the one written $(Q,T)$ above. A pass-through runner will do, and then \texttt{lower.run} is one
+hop to the server that serves it.
 
 \begin{lstlisting}[language=TS]
 const reply = await lower.run(u(prompt));   // u: the prompt, going down
@@ -1791,12 +2190,11 @@ return f(prompt, reply);                    // f: the response, coming back
 
 The mapping $u$ runs on the way down. Then the function stops. The frame is set aside and the flow
 of control goes back to the loop. In this implementation the descent is a real one, because a
-process is spawned and a socket is opened. Control genuinely leaves this program. When the reply
+process is spawned and a socket is opened. Control genuinely leaves this program. When the response
 arrives it resumes this frame at this line, and $f$ runs on the way back up.
 
 Control down, data up, in one function body, read top to bottom, with the suspension invisible in
 the text. That is what the algebra says a morphism is. It is one keyword doing all of it.
-
 
 \newpage
 
@@ -1843,239 +2241,86 @@ Here again is the line that put both prompts in flight.
 await Promise.all([ask(100), ask(100)]);
 \end{lstlisting}
 
-Read it with the container algebra in front of you. Both sides are prompted. \emph{Both replies are owed.} If either rejects, the whole thing rejects. There is no
-outcome in which one answer arrives and the other is excused. That is the tensor, exactly.
+Read it with the container algebra in front of you. Both sides are prompted. \emph{Both responses are owed.} If either rejects, the whole thing rejects. There is no
+outcome in which one response arrives and the other is excused. That is the tensor, exactly.
+
 
 \newpage
 
-\section{The enforcement question}
+Now the game's \texttt{delegateAll} is one line, and its comment says so.
+
+\begin{lstlisting}[language=TS]
+/** Fire several prompts at once and require a reply from each -- the tensor's defining move. */
+export const delegateAll = <T extends readonly [number, unknown][]>(
+  calls: T, depth: number,
+): Promise<unknown[]> =>
+  Promise.all(calls.map(([port, prompt]) => delegate(port, prompt, depth)));
+\end{lstlisting}
+
+That line needs unpacking.
+
+\begin{itemize}\setlength{\itemsep}{2pt}
+\item The type \texttt{[number, unknown]} is a pair. A port number, and a prompt whose type is not
+      yet known.
+\item So the argument \texttt{calls} is a list of such pairs.
+\item The word \texttt{readonly} says this function will not alter the list it was handed.
+\item The method \texttt{calls.map} applies a function to every element and collects the results.
+      Here every pair becomes one promise.
+\item The pattern \texttt{([port, prompt])} takes a pair apart in the place where the parameter
+      would be named.
+\item The function \texttt{delegate} fires one prompt at one port and returns a promise of the
+      response. That is the descent, and it spawns a process.
+\item The operator \texttt{Promise.all} turns the list of promises into one promise of a list.
+\item The number \texttt{depth} is how far down the tower this hop is. It rides along so the trace
+      can indent, and it plays no part in the algebra.
+\end{itemize}
+
+So a list of pairs goes in, one port and one prompt in each, and one promise of a list of responses
+comes out. Notice that nothing is
+awaited here. The caller decides when to wait, and until it does, every prompt is in flight.
+
+\newpage
+
+\section{The other three combinators}
+\label{sec:otherthree}
+
+The other three fall out of the same reading.
+
+\begin{center}\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{combinator} & \textbf{written as} & \textbf{because} \\
+\midrule
+$\boxtimes$ tensor      & \texttt{await Promise.all([...])} & all are prompted, all responses owed \\
+$\times$ product        & \texttt{await} one of them, chosen & both offered, exactly one answers \\
+$\lhd$ sequential       & \texttt{await} $a$, then \texttt{await} $b(\text{response})$
+                        & the second prompt is computed from the first response \\
+$+$ sum                 & a \texttt{switch} on the tag & one side or the other \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The sequential row is only expressible because \texttt{await} returns a value. The second prompt is
+computed from the first response.
+
+The product row merits a remark. Nothing in \texttt{Promise} enforces that exactly one of the two
+responses is used. An un-disciplined programmer could use both responses and mess
+everything up.
+
+\newpage
+
+\section{Formal verifiability}
 \label{sec:enforcement}
 
-One pattern has recurred at every level of the stack just described. \textbf{A prompt determines the
-type of its response.} That is the container of the introduction, and it was there five times.
-In a system call. In a pipe. In a command-line tool. In an HTTP exchange. In a handler table.
+The short answer is that this design cannot be formally verified. The algebra motivates the
+architecture. It does not verify it.
 
-What changed from level to level was never the pattern. It was only ever the answer to one question.
-This section is about asking it systematically.
+The algebra is a design vocabulary, and it was used as one.
 
-\begin{center}
-\emph{Who is checking that the reply really has the type the prompt calls for? And when?}
-\end{center}
-
-For a reader who spends their working life distinguishing what is proved from what is tested from
-what is merely believed, this is the only question about the implementation worth asking. The
-answer is not a single verdict. It is a ledger.
-
-\subsection{Three kinds of guarantee}
-
-Everything in this note falls into one of three classes. The note marks them with these badges
-from here onwards.
-
-\begin{center}\small
-\begin{tabular}{@{}cl>{\raggedright\arraybackslash}p{86mm}@{}}
-\toprule
-\enfC & \textbf{compile time} & Checked by the type checker, before the program runs. The mistake
-                               is not merely detected. It cannot be written down. It costs nothing
-                               at run time, because the types are erased. \\[1mm]
-\enfR & \textbf{run time}     & Checked by code you can point at, while the program runs. The
-                               mistake is possible. It is detected. It produces a value, a
-                               \texttt{null} or a \texttt{400}, that somebody must handle. \\[1mm]
-\enfD & \textbf{discipline}   & Not checked by anything. The guarantee lives in a manual page, a
-                               comment, or a habit. The mistake is possible. It is not detected.
-                               Its consequence appears somewhere else entirely. \\
-\bottomrule
-\end{tabular}
-\end{center}
-
-The distinction that matters most is not \enfC{} against \enfR. It is \enfR{} against \enfD. A
-\enfR{} failure is a value in a program. A \enfD{} failure is a plausible number in a report.
-
-\subsection{The ledger of the stack}
-
-Reading down, the enforcement gets stronger and it gets narrower.
-
-\begin{center}\footnotesize
-\begin{tabular}{@{}>{\raggedright\arraybackslash}p{20mm}>{\raggedright\arraybackslash}p{40mm}>{\raggedright\arraybackslash}p{31mm}>{\raggedright\arraybackslash}p{40mm}c@{}}
-\toprule
-\textbf{Level} & \textbf{Prompt} & \textbf{Response} & \textbf{Enforced by} & \\
-\midrule
-a system call   & \texttt{read}/\texttt{write} on a descriptor & bytes, or an error
-                & the kernel, in hardware            & \enfR \\
-a pipe          & the bytes upstream        & the bytes downstream
-                & nobody                             & \enfD \\
-a CLI tool      & the argument vector       & stdout and an exit status
-                & a manual page somebody read        & \enfD \\
-an HTTP request & method, path, headers, body & a status and a body
-                & the status code, for \emph{failure} only & \enfR \\
-a handler       & a tagged request          & the answer at that tag
-                & the compiler, inside one process   & \enfC \\
-\bottomrule
-\end{tabular}
-\end{center}
-
-The two ends of that table are worth stating as a pair. Neither can be dispensed with. Neither
-reaches the other.
-
-\textbf{The kernel checks everything and understands nothing.} It will not let a process read a
-file its user may not read. The enforcement is in the physical processor's mode bit rather than in any
-convention. There is no way to write the violating program. And it has no opinion whatever about
-whether the bytes in that file mean anything.
-
-\textbf{The compiler understands everything and checks almost nothing.} It knows exactly which
-answer belongs to which request. It can make a handler table total by construction. And it has gone
-home before the first byte arrives.
-
-So the engineering is all at the handovers. The middle three rows are where the note's three
-handovers live. From a pipe to a program. From a program to a network. From the network back into
-the type system.
-
-\subsection{Where $R$ stops depending on $P$}
-\label{sec:rdep}
-
-There is a way of reading the ledger that makes it one statement instead of five. It is the
-sharpest thing in this note.
-
-TypeScript has no dependent types. \emph{Neither does Unix.} And Unix has no types at all, which is
-worse, and is the reason the ledger looks the way it does. Recall from §\ref{sec:unix} what the
-substrate actually offers. The container Unix implements is
-\[
-  P = \texttt{String}^{*} \qquad\qquad R\,p = \texttt{Bytes} \quad \text{for every } p .
-\]
-Here $R$ does not mention $p$. The interface is not weakly dependent. It is not dependent. A container
-whose $R$ ignores its argument is an ordinary function space wearing the notation.
-
-So the honest description of the whole stack is this. \textbf{The bottom of the tower transports a
-constant $R$. Every layer above it is an attempt to make $R$ depend on $p$ again. Each succeeds a
-little more, over a little less.}
-
-\begin{center}\footnotesize
-\begin{tabular}{@{}>{\raggedright\arraybackslash}p{22mm}>{\raggedright\arraybackslash}p{55mm}>{\raggedright\arraybackslash}p{55mm}c@{}}
-\toprule
-\textbf{Layer} & \textbf{What $R$ is here} & \textbf{What it added} & \\
-\midrule
-a pipe
-  & \texttt{Bytes}, constant
-  & nothing. It is the floor
-  & \enfD \\[1mm]
-a CLI tool
-  & \texttt{Bytes}, constant. The dependency is in the manual page
-  & a \emph{claim} that the bytes differ by subcommand, and a place to write it down
-  & \enfD \\[1mm]
-HTTP
-  & \texttt{Status $\times$ Bytes}
-  & a sum in the \emph{reply}. Worked, your fault, my fault. Note that this is not indexed by
-    the prompt. HTTP does not make $R$ depend on $P$. It coarsens $R$ into three cases
-  & \enfR \\[1mm]
-JSON
-  & a term of six types
-  & structure, so the bytes can be interrogated at all. And no schema, so still nothing about
-    \emph{which} structure
-  & \enfD \\[1mm]
-a validator
-  & $T$ or \texttt{null}
-  & the first genuine narrowing. A decision procedure, run on the bytes, whose refusal is a
-    value
-  & \enfR \\[1mm]
-a handler table
-  & \texttt{Answers[K]}, genuinely indexed by \texttt{K}
-  & \emph{dependency}, at last, and total by construction
-  & \enfC \\
-\bottomrule
-\end{tabular}
-\end{center}
-
-Three things fall out of reading it that way. Each answers a question the earlier sections raised
-and did not settle.
-
-\textbf{Only the last row is a dependent type, and it holds inside one process.} Everything else is
-transport. The dependency exists for exactly as long as the value stays where the compiler can see
-it. It is destroyed the moment the value is serialised. Not weakened. Destroyed. Serialising it
-means projecting it into the constant-$R$ world at the bottom of the table.
-
-\textbf{HTTP's contribution is smaller than its prominence suggests, and it is still the most
-useful thing in the middle.} A status code does not tell you which reply belongs to which request.
-It tells you whether there is a reply at all, and whose fault it is if not. That is one bit of
-structure where there had been none. It is the difference between a caller that can respond to
-failure and one that cannot. It is why §\ref{sec:impl} spends a subsection on getting \texttt{400}
-and \texttt{500} apart.
-
-\textbf{And the validator is where the tower is actually rebuilt.} Every crossing of a boundary
-knocks $R$ back down to bytes. The function \texttt{unknown $\to$ T | null} is the only thing that
-puts it back. It appears once per boundary. It is written by hand. It is checked by nothing. That
-is why the trusted base below has it in the first row. The compiler's strength inside a process is
-exactly the validator's correctness at its edge, multiplied by nothing else.
-
-That is also the cleanest way to say why a proof assistant would not rescue this. The reader may
-now check that claim against the table. A better language improves the
-bottom row of that column, \enfC. It cannot touch the floor. The floor is not a type system that
-could be improved. It is the absence of one.
-
-\subsection{The trusted base}
-
-\enfD{} is not an absence of guarantee. It is a guarantee resting on somebody's care. So it is
-worth naming what is being trusted, in the sense a reader of this note means by the word.
-
-\begin{center}\small
-\begin{tabular}{@{}>{\raggedright\arraybackslash}p{58mm}>{\raggedright\arraybackslash}p{42mm}>{\raggedright\arraybackslash}p{40mm}@{}}
-\toprule
-\textbf{Trusted} & \textbf{If it is wrong} & \textbf{Detected by} \\
-\midrule
-the validator \texttt{unknown $\to$ T | null} agrees with \texttt{T}
-  & every \enfC{} guarantee downstream is reasoning about a false premise
-  & nothing \\[1mm]
-the two ends of a wire mean the same thing by their JSON
-  & shapes match, meanings do not
-  & nothing \\[1mm]
-results on descriptor~1, narration on descriptor~2
-  & the caller cannot parse the reply
-  & the caller, loudly \\[1mm]
-the exit status means what the caller thinks
-  & control flow inverts silently (\texttt{grep -c} against \texttt{-q})
-  & nothing \\[1mm]
-the combinator laws hold of the implementation
-  & the algebra is decorative
-  & nothing. There are no law tests \\[1mm]
-the number in a report is the number that happened
-  & you plan against fiction
-  & nothing, \emph{and this is the subject of the game} \\
-\bottomrule
-\end{tabular}
-\end{center}
-
-The first row is the load-bearing one and deserves its sentence said plainly. All the compiler's
-strength inside a process is conditional on the boundary function being right. And \emph{nothing
-checks the boundary function}. It is written by hand. It is the only thing standing between
-\texttt{unknown} and every guarantee that follows it. It is exactly as trustworthy as its author
-was careful.
-
-A \texttt{Book} downstream of a correct validator really does have a numeric id. A \texttt{Book}
-downstream of a validator that forgot a field is an assertion the compiler will now defend with
-great rigour for the rest of the program.
-
-\subsection{The algebra motivates the architecture; it does not verify it}
-
-One row of the previous table needs enlarging. A reader from formal verification will otherwise
-assume something this note does not claim.
-
-\textbf{Nothing here is formally verified, and the container formalism is not doing verification
-work.} There is no proof that the implementation is a lawful instance of anything. There is no test
-asserting that $\boxtimes$ is associative. None asserting that the product's projections are
-projections. None asserting that the identity morphism is an identity, or that the composite of two
-morphisms is a morphism.
-
-Those laws are true of Ghani's construction. Whether they are true of the five programs below is an
-open question that nobody in this repository has asked. If one of them failed, the game would carry
-on running and the report would look exactly the same.
-
-What the formalism did instead is worth being clear about. It is a real contribution, and it is a
-different kind of contribution.
-
-\textbf{It supplied the architecture.} The algebra is a design vocabulary, and it was used as one.
-
-It is the reason the game is five processes rather than one. A morphism has a level above and a
+The algebra is the reason the game is five processes rather than one. A morphism has a level above and a
 level below, and making the boundary a socket makes that claim falsifiable.
 
-It is the reason each turn is a named composite rather than a block of code. The algebra offers
+The algebra is the reason each turn is a named composite rather than a block of code. The algebra offers
 four ways to combine, and forces the designer to say which.
 
 And it is the reason the central mechanic of the game is what it is. The combinators $\boxtimes$ and $\times$ have
@@ -2086,270 +2331,16 @@ would have been made worse.
 
 So here is the honest statement of what the algebra bought. Better decomposition. A forced decision
 at every junction. And a name for the distinction the game turns on. Not a theorem. The formalism
-is load-bearing for the \emph{design} and carries no weight in the \emph{verification}. Confusing
-the two is the failure mode this section exists to prevent.
+is load-bearing for the \emph{design} and carries no weight in the \emph{verification}. We make no
+claim otherwise.
 
-That distinction is also the answer to a question the next subsection would otherwise invite. If
-the laws were verified, the case for a proof assistant would be much stronger than it is about to
-look.
-
-\subsection{Why a better type system moves fewer of these rows than one expects}
-
-Consider a proof assistant again, with the ledger in hand. This is where the argument becomes
-arithmetic rather than assertion.
-
-Suppose the whole game were rewritten in Idris. Which rows change?
-
-The \emph{handler} row improves, and genuinely. The signature $(p : P) \to R\,p$ becomes a type
-rather than a
-mapped type over a union of string literals. The index set need not be finite. The rules that
-§\ref{sec:impl} encodes as conditional types could be stated as properties rather than as tables.
-That is a real gain. It is confined to one row.
-
-Every other row is exactly where it was.
-
-The \emph{pipe} row is bytes in both languages. The \emph{CLI} row is a manual page in both. The
-\emph{HTTP} row is a three-digit number in both. And the boundary, the row the whole thing rests
-on, is a hand-written procedure from \texttt{String} in both, because that is what arrives. Idris
-will let you state its contract with far more precision. It will let it hand back a proof object.
-It will not check that the proof procedure corresponds to anything on the other end of the socket.
-The other end of the socket is another program, possibly written by somebody else, possibly not
-running.
-
+\begin{sectionbox}
 \textbf{This is the take-home point of the entire note.} What is built below is a fake. It is a
 container algebra impersonated in a language with no dependent types. The temptation is to read
 that as a confession of laziness, repairable by choosing a better language. It is not. The faking
 is forced by IO.
+\end{sectionbox}
 
-A dependent type is a statement a compiler checks about a program it can see. A socket is a hole in
-the program the compiler cannot see through. Every prompt in this system arrives through one.
-Choosing Idris would sharpen the inside of each of the five processes. It would leave all four
-boundaries between them exactly as they are. \enfR{} where somebody wrote a check. \enfD{}
-everywhere else.
-
-The claim this note makes, then, is not that TypeScript is adequate to Ghani's algebra. It is that
-the algebra's \emph{operational} content is not a type-theoretic fact at all. Control flowing down,
-data flowing back up. That is a fact about processes, and about a suspended function being resumed.
-It is enforced by the kernel and by an event loop. The reader will find it holds up rather better
-than the parts a compiler was responsible for.
-
-\subsection{What is still to be decided}
-
-Three questions remain open at this point in the note. Each is settled by the implementation
-rather than by the stack.
-
-\begin{itemize}
-\item Which rules of the game can be pushed up into \enfC, and what it costs to reach them from
-      data that only exists at run time.
-\item What the validator at each boundary actually checks. That is not the same question as what
-      it ought to check.
-\item Which of the four combinators survives the wire, and which one cannot cross it at all.
-\end{itemize}
-
-The game comes first. The answers only mean something once there is something at stake in them.
-
-
-\newpage
-
-\section{The game}
-\label{sec:game}
-
-The purpose of this game is to illustrate Ghani's theory of container combinators for
-event-driven programming. The game is the example. The algebra is the subject.
-
-This is a game about Stalin and his First Five-Year Plan. You are given the Soviet Union in 1928
-and five years to industrialise it. You must also win the war in 1941. This was a tragic episode of
-history and I don't wish to make light of the story. It is for illustrative purposes only.
-
-\begin{center}
-\begin{tikzpicture}
-
-% --- SPRING: tensor ---
-\node[plan] (sow) {Sow};
-\node[lbl, above=1mm of sow] {spring};
-\node[op, draw=tensor, text=tensor] (t1) [right=14mm of sow] {$\boxtimes$};
-\node[srv] (agri)  [above right=8mm and 20mm of t1] {agriculture: Harvest};
-\node[srv] (mill)  [right=20mm of t1]               {industry: Smelt};
-\node[srv] (rail)  [below right=8mm and 20mm of t1] {transport: Lay};
-\draw[ar] (sow) -- (t1);
-\draw[ar] (t1) -- (agri);
-\draw[ar] (t1) -- (mill);
-\draw[ar] (t1) -- (rail);
-\begin{scope}[on background layer]
-\node[fit=(t1)(agri)(mill)(rail), draw=tensor, dashed, rounded corners=3pt,
-      inner sep=2.8mm, label={[capt, text=tensor, align=center]below:%
-      the tensor\\[-0.4mm]
-      {\normalfont\itshape\tiny three sectors, one year. All three must answer}}] {};
-\end{scope}
-
-% --- AUTUMN: seq ---
-\node[plan] (reap) [below=32mm of sow] {Reap};
-\node[lbl, above=1mm of reap] {autumn};
-\node[op, draw=seq, text=seq] (s1) [right=14mm of reap] {$\lhd$};
-\node[srv] (rail2) [right=18mm of s1]    {transport: Haul};
-\node[srv] (trade) [right=22mm of rail2] {trade: SellGrain};
-\draw[ar] (reap) -- (s1);
-\draw[ar] (s1) -- (rail2);
-\draw[ar] (rail2) -- (trade);
-\begin{scope}[on background layer]
-\node[fit=(s1)(rail2)(trade), draw=seq, dashed, rounded corners=3pt,
-      inner sep=2.8mm, label={[capt, text=seq, align=center]below:%
-      sequential composition\\[-0.4mm]
-      {\normalfont\itshape\tiny what you may sell is decided by what the railway moved}}] {};
-\end{scope}
-
-% --- PRODUCT ---
-\node[op, draw=prod, text=prod] (p1) [below=30mm of s1] {$\times$};
-\node[srv] (tract) [above right=7mm and 24mm of p1] {industry: BuildTractors};
-\node[srv] (arms)  [below right=7mm and 24mm of p1] {industry: BuildArmaments};
-\draw[ar] (reap) |- (p1);
-\draw[ar] (p1) -- (tract);
-\draw[ar] (p1) -- (arms);
-\begin{scope}[on background layer]
-\node[fit=(p1)(tract)(arms), draw=prod, dashed, rounded corners=3pt,
-      inner sep=2.8mm, label={[capt, text=prod, align=center]below:%
-      the product\\[-0.4mm]
-      {\normalfont\itshape\tiny both are asked. Exactly one answers, because there is one stock of steel}}] {};
-\end{scope}
-
-\end{tikzpicture}
-\end{center}
-
-\textbf{You want to build tractors.} Not because tractors win anything. Because they raise the
-harvest \emph{without} taking the grain. They are the way to pay for industrialisation in machines
-instead of in people. Everything else in the economy exists to get you to them.
-
-\textbf{For that you need steel and railways.} Steel needs a mill. A mill needs a German engineer.
-An engineer has to be paid in hard currency. Hard currency comes from selling grain to the USA. It
-is the same grain the villages eat.
-
-Railways need steel too, and they are not capital but \emph{throughput}. Grain the railway cannot
-move rots at the sidings, whatever the harvest was. So track comes before tonnage. Early on you may
-also buy steel abroad outright, paying in grain. That is the same trade at a worse rate.
-
-\textbf{You must also feed the peasants.} The labour force is one pool of people. They can work the
-fields, drive the tractors, work the mill or lay the track. But everyone eats, and only the first
-two grow anything. That is why moving a peasant into the mill costs you twice.
-
-How hard the villages are squeezed is a decision you make every spring. What is not taken is what
-they eat. Starvation in this game is not a scoring gimmick. It is the direct arithmetic consequence
-of the extraction decision, which is what it was.
-
-\textbf{And you must prepare for the war.} In 1941 the country is invaded, and what it has put by
-decides the cost. Peasants serve as the soldiers, so the same population is both the workforce and
-the army. Steel not spent on tractors or track can be spent on armaments instead. Fight with too
-little steel and you win by sending more men. Fight with enough and you send fewer. Fail to arm at
-all and no amount of mechanisation saves you.
-
-So the aim is two numbers at once. The harvest at the end of the plan should exceed the harvest
-before it began. And as few people as possible should die getting there, counted in both columns,
-the starved and the fallen. \textbf{There are various strategies.} They disagree with each other.
-The rest of this section is what happens when you try them.
-
-A year is two turns, and the split is the point. In \emph{spring} you fix where the hands go and
-how hard the villages are squeezed, \emph{before} you know the weather. In \emph{autumn} the
-harvest comes in graded, and you dispose of it knowing exactly what it was. A quota set in March
-against a harvest that fails in August is not a game mechanic. It is how a famine is administered.
-Five years is ten decisions, and then a reckoning.
-
-\subsection{Why the two costs are not independent}
-
-Combat power in 1941 is
-\[
-  m \cdot \mathrm{manPower} \;+\; \mathrm{steelPower} \cdot \sqrt{W \cdot m}
-\]
-for $m$ men and $W$ tonnes of war reserve. A man is worth something holding nothing. A shell is
-worth nothing with nobody to fire it. And the second term grows as a square root, so the more steel
-each man already carries, the less the next tonne adds.
-
-Men and steel are therefore complements, and partly substitutes. The same victory can be bought
-with more of one or more of the other. The price of the second is paid in lives.
-
-The trap is that extraction feeds both sides of that expression with opposite signs. A peasant
-starved in 1932 is a soldier missing in 1941. So squeezing harder to build steel shrinks the army
-the steel was meant to protect. Push far enough and you lose the war holding the largest stockpile
-in Europe.
-
-\subsection{Build them or buy them}
-
-There are two roads to a tractor, and choosing between them is most of the early game.
-
-\textbf{Build them.} Hard currency buys a German engineer. The engineer raises the mill. The mill
-makes steel. Twenty spare tonnes of steel opens the works. The works makes twenty tractors a year
-forever. Four steps, and the first tractor is years away.
-
-\textbf{Buy them.} Ten in hard currency each, ready to drive. They need no engineer, no mill and no
-works. They build none of those either. Every one is bought again next time.
-
-\subsection{Seven plans}
-
-A plan keeps its letter for the whole game. So a sequence of ten letters is a strategy, and the
-space can be searched directly. All seven below were run at seed 1928. The numbers are what came
-out of the terminal.
-
-\begin{center}\small
-\begin{tabular}{@{}llrrrrrl@{}}
-\toprule
-strategy & letters & tractors & armaments & starved & fallen & \textbf{dead} & outcome \\
-\midrule
-gentle armament   & \texttt{AJBEBJAJAJ} &  2 & 89 &  5 &  4 & \textbf{9}  & won \\
-brutalist mech.   & \texttt{CMKEBIBJNJ} & 22 & 80 & 14 &  5 & \textbf{19} & won, mechanised \\
-no railway        & \texttt{KABEBIBJAJ} & 22 & 82 & 25 &  4 & \textbf{29} & won, mechanised \\
-partial armament  & \texttt{CABEBINJAA} & 42 & 34 & 21 & 14 & \textbf{35} & won, mechanised \\
-totally brutal    & \texttt{KJBEAJBJAJ} &  2 & 78 & 44 &  5 & \textbf{49} & won \\
-bought tractors   & \texttt{AMAMAFAMAF} & 18 &  0 &  3 & 57 & \textbf{60} & \emph{lost} \\
-never armed       & \texttt{CAKEBINIAI} & 62 &  0 & 15 & 52 & \textbf{67} & \emph{lost} \\
-\bottomrule
-\end{tabular}
-\end{center}
-
-Five of the seven win. The table says several things at once.
-
-\textbf{Never arming loses.} A beautifully mechanised country falls in 1941. Sixty-two tractors and
-the largest harvest on the board. Men with nothing to fire cannot reach the enemy's strength.
-
-\textbf{Buying the tractors abroad is the humane road, and it is fatal.} Three starve, the fewest
-of any line. But imported tractors build no mill, no engineers and no steel. So there is nothing to
-arm with, and fifty-seven soldiers pay for the three peasants.
-
-\textbf{Partial armament wins and bleeds.} Thirty-four tonnes is enough to win. It is not enough to
-win cheaply. Fourteen fallen, against the best line's four. The war curve is smooth, so half an
-army is a victory paid for in men.
-
-\textbf{The railway comes before the steel.} Grain the railway cannot move rots at the sidings. A
-hard quota with no track to carry it starves twenty-five people for nothing. That is worse than the
-same brutality with a railway, for the same industrial result.
-
-\textbf{The two rankings disagree.} By soldiers lost, \emph{no railway} and \emph{gentle armament}
-tie at four. By everyone lost, gentle armament wins outright at nine, while no railway comes third
-at twenty-nine. The game keeps both numbers and does not say which is the real one.
-
-\subsection{The plan the game was built around, and the one that beats it}
-
-The design intent was that \emph{brutalist mechanisation} should be optimal. Starve the villages
-early. Spend it on rail, engineers and tractors. Then turn the surplus into an army. It is morally
-uncomfortable and it was supposed to win.
-
-It does not. The plan \texttt{AJBEBJAJAJ} wins for nine dead by doing almost nothing. It was found by
-machine search over the menu rather than by hand. Put hands in the mill. Buy the Germans once. Then
-smelt straight into armaments for four years. No railway. No tractors on purpose. And no famine
-beyond the baseline five who die whatever you do.
-
-\textbf{But look at what it does not end up holding.} A plan counts as mechanised if its final
-harvest beats 1928's. Gentle armament finishes at 258 against a baseline of 277. It feeds fewer
-people in 1932 than the country fed before the plan began. It wins the war and it does not build
-the country.
-
-Brutalist mechanisation ends at 285, with twenty-two tractors and an economy that would go on
-producing. It pays five more lives for that. So the cheapest plan in lives is also the one that
-leaves nothing behind. The game does not resolve that either.
-
-The reason gentle armament wins at all is a dependency length rather than a number. Its chain is
-mill $\to$ steel $\to$ armaments. Three links, so the first armaments are built in 1929. The
-mechanised chain is rail $\to$ export $\to$ engineers $\to$ works $\to$ tractors $\to$ freed hands
-$\to$ mill $\to$ steel $\to$ armaments. Nine links, each costing at least a turn, against ten turns
-in the whole plan. The mechanised economy matures in 1932, and then the plan ends. This is recorded
-as a failing test in \texttt{calibrate.ts} rather than quietly redefined.
 
 \newpage
 
@@ -2392,27 +2383,8 @@ Plan delegates to the four commissariats beneath it.
 \end{center}
 
 Every arrow is a delegation, and every arrow points away from the Plan. The Plan is the only
-client any of them has. The four do not talk to each other. None of them can see the others' books.
-That is what makes the picture a star rather than a chain, and what makes the levels separable in
-the first place.
+client any of them has. The four do not talk to each other.
 
-They could have been five modules with a function call at every hop. The comment at the top of
-\texttt{wire.ts} says why they are not.
-
-\begin{quote}
-A hop costs a process, which is the whole point. Control genuinely flows down, and the boundary is
-real rather than a function call wearing a costume.
-\end{quote}
-
-The delegate leg $u$ maps \emph{shapes}, and shapes are exactly what survives a wire. If a hop were
-a function call, nothing would stop a handler reaching into its caller's state, and the claim that
-the levels are separate would be untestable. Making it a socket makes the claim falsifiable.
-Whatever crosses must be expressible in JSON, and the compiler on the far side has never heard of
-your types.
-
-The cost is written down too. It is about a fifth of a second per hop, which a hundred-game search
-pays forty times per game. Hence an environment variable that keeps the HTTP hop and skips only the
-process spawn. No game a player sees uses it.
 
 \subsection{The game as a composite}
 
@@ -2428,25 +2400,15 @@ spring & (agri $\boxtimes$ mill) $\boxtimes$ rail & all three work at once and \
 owe a report}. There is no partial year \\[1mm]
 autumn & transport $\lhd$ trade & what may be sold is computed \emph{from} what the railway
 actually moved \\[1mm]
-build  & tractors $\times$ armaments & the same steel, one decision. Offer both, answer one \\
+build  & tractors $\times$ armaments & choose to invest in either tractors or armaments \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-The product is the one to look at twice. Tractors and armaments are both offered every autumn, and
-exactly one is built, because there is one stock of steel. Had the game let you split the steel
-between them it would have been a tensor. The central dilemma of §\ref{sec:game} would have
-dissolved into a slider. The choice of combinator \emph{is} the game mechanic.
-
-The sum, honestly, is never built as a composite. There is no \texttt{sumC} call in the game. It
-appears instead as each container's own shape type, a tagged union, whose eliminator is the
-\texttt{switch} in every server. That is a coproduct doing real work. Calling it a use of the
-combinator would be an overstatement.
-
 \subsection{What crosses, and what the status code says}
 
-Every hop is a \texttt{POST} to a port with a JSON body, and the reply is JSON. The path is
-unused. The port identifies the container. The three outcomes are genuinely different kinds of
+Every hop is a \texttt{POST} to a port with a JSON body, and the response is JSON. The port
+identifies the container. The three outcomes are genuinely different kinds of
 thing, and the status vocabulary already distinguishes them.
 
 \begin{lstlisting}[language=TS]
@@ -2455,62 +2417,32 @@ catch { return json({ error: "not JSON" }, 400); }
 
 const prompt = opts.parse(body);
 if (prompt === null) {
-  // The validator refused.  No cast was made, so nothing ill-typed is
-  // downstream of this line -- that is the whole point of validating.
   return json({ error: "not a valid prompt for this container", got: body }, 400);
 }
 try   { return json(await opts.answer(prompt, depth + 1), 200); }
 catch (e) { return json({ error: msg }, 500); }
 \end{lstlisting}
 
-Against the transport commissariat, with the servers running:
 
-\begin{lstlisting}[language=SH]
-$ curl -s -X POST localhost:8804 \
-    -d '{"tag":"Haul","railCapacity":40,"available":100,
-         "needIndustry":30,"offerPort":50,"year":1929}'
-{"toIndustry":30,"toPort":10,"stranded":40,"short":0}          -- 200
-
-$ curl -s -X POST localhost:8804 -d '{"tag":"Haul","railCapacity":"lots"}'
-{"error":"not a valid prompt for this container", ...}         -- 400
-$ curl -s -X POST localhost:8804 -d 'not json at all'
-{"error":"not JSON"}                                           -- 400
-$ curl -s -X POST localhost:8804 -d '{"tag":"Purge"}'          -- 400
-\end{lstlisting}
-
-Read the first reply, because it is the game in four numbers. Forty units of rail capacity. A
-hundred units of grain in hand. Thirty needed at the mill, and fifty offered to the port. The mill
-is fed first, which leaves ten units of capacity. So ten reach the port and \textbf{forty tonnes
-are stranded}. That is grain the state owns, has procured, and cannot move. It is why a railway is
-throughput rather than capital. It is the whole content of the \emph{no railway} line in the table
-in §\ref{sec:game}.
-
-The three 400s are all ``that was not a prompt'', at three depths. Not JSON at all. JSON, but not
-this container's shape. A tag this container does not have. Only a 500 means ``that was a prompt,
-and answering it went wrong''. Getting that split right is what lets a caller tell a bug in itself
-from a bug in its callee.
-
-One thing rides outside the body. A depth counter travels in a header, \texttt{x-tower-depth}. The
-reason given in the source is worth adopting generally. \emph{The depth rides in a header rather
-than in the prompt, because the prompt is the container's shape, and nothing that isn't a prompt
-belongs in it.}
+The depth rides in a header rather than in the prompt, because the prompt is the container's shape,
+and nothing that isn't a prompt belongs in it.
 
 \subsection{A hop is a CLI tool}
 
-The program that carries a prompt to the next level is forty lines long, and knows nothing about
-the game.
+The program that carries a prompt to the next level is fifty lines long, and knows nothing about
+the game. With the agriculture commissariat running, a single prompt can be fired at it by hand.
 
 \begin{lstlisting}[language=SH]
-$ deno run --quiet --allow-net --allow-env \
-    lib/delegate.ts 8804 '{"tag":"Census"}' 0
-{"workforce":{"fields":0,"drivers":0,"mill":0,"rail":0,"dead":0},
- "stocks":{"railCapacity":0},"trueOutput":0}
+$ deno run --quiet --allow-net --allow-env lib/delegate.ts 8802 \
+    '{"tag":"Harvest","workforce":{"fields":100,"drivers":0,"mill":12,
+      "rail":8,"dead":0},"tractors":0,"year":1928}' 0
+{"grain":263.35,"grade":"adequate","perWorker":2.63,"withoutTractors":263.35}
 \end{lstlisting}
 
-It is the delegate leg $u$ made executable, and it observes every discipline from §\ref{sec:unix}.
+That is the mapping $u$ made executable, and it observes every discipline from §\ref{sec:unix}.
 Its exit codes distinguish the two kinds of failure. Exit code \texttt{2} for a malformed prompt or missing
 arguments. Exit code \texttt{1} for a port with nothing behind it. Every diagnostic goes to descriptor~2, and
-descriptor~1 carries the reply and nothing else. That is exactly what lets the caller parse the
+descriptor~1 carries the response and nothing else. That is exactly what lets the caller parse the
 whole of stdout as one JSON document.
 
 That discipline is also what makes the tracing possible. The servers narrate themselves on
@@ -2519,16 +2451,34 @@ descriptor~2 while descriptor~1 stays machine-readable.
 \begin{lstlisting}[style=trace]
  ↓ gosplan   Sow order={"procurement":"firm","labour":{"…
    ↓ gosplan   ((agri (x) smelter) (x) transport)
-     ↓ agri      Harvest workforce={"fields":100,...} tractors=0 year=1928
+     ↓ agri      Harvest workforce={"fields":96,"drivers":0,"mill":1… tractors=0 year=1928
      ↑ agri      {grain, grade, perWorker, withoutTractors}
-     ↓ industry  Smelt workers=12 millCapacity=8 year=1928
+     ↓ industry  Smelt workers=14 millCapacity=8 year=1928
      ↑ industry  {steel, idleCapacity}
+     ↓ transport Lay workers=10 steel=10 year=1928
+     ↑ transport {added, steelUsed}
  ↑ gosplan   {kind, year, harvest, steel, …}
 \end{lstlisting}
 
 Indentation is the depth counter. The arrow \texttt{↓} is control flowing down. The arrow
-\texttt{↑} is data flowing back up. That is a derivation tree of container morphisms, printed by a program that had no idea it
-was doing that.
+\texttt{↑} is data flowing back up. The tracer prints at most thirty-four characters of any value
+and then gives up, which is what the \texttt{…} is.
+
+The second line is the one to look at. It is a runner's \texttt{label}, and labels compose. A
+pass-through runner is given one when it is built. Every combinator makes its own out of the labels of its parts, in the
+algebra's own notation.
+
+\begin{lstlisting}[language=TS]
+label: `(${a.label} (x) ${b.label})`    // the tensor
+label: `(${a.label} x ${b.label})`      // the product
+label: `(${a.label} <| ${b.label})`     // the sequential
+label: `(${a.label} + ${b.label})`      // the sum
+\end{lstlisting}
+
+So \texttt{((agri (x) smelter) (x) transport)} is not a comment anybody wrote. It is the expression
+that built that runner, printing itself, and the four hops indented beneath it are what the
+expression turned into. That is a derivation tree of container morphisms, printed by a program that
+had no idea it was doing that.
 
 \subsection{Where the compiler carries a rule of the game}
 
@@ -2566,7 +2516,7 @@ A function cannot be serialised. And the shape of $\lhd$ is a first prompt toget
 computing the second.
 
 So sequential composition cannot be distributed over the wire. It is resolved \emph{above} it, in
-the runner. The runner prompts the first container, then applies that function to the reply to
+the runner. The runner prompts the first container, then applies that function to the response to
 obtain the second prompt. Only the two ground prompts ever cross.
 
 The wire format is not neutral about which combinators can be sent and which must be interpreted
@@ -2584,7 +2534,7 @@ Narkomtiazhprom: quota fulfilled, with difficulties overcome.
 \end{lstlisting}
 
 This is the honest limit of everything above. The type of a dispatch guarantees its shape and says
-exactly nothing about its truth. A validator can establish that a reply is a well-formed dispatch.
+exactly nothing about its truth. A validator can establish that a response is a well-formed dispatch.
 No validator can establish that the number in it is the number that happened. The reckoning prints
 both columns and leaves the reader to notice.
 
@@ -2617,7 +2567,7 @@ Ghani's combinators are a construction in dependent type theory. TypeScript has 
 types, and Unix has no types, and nothing here added either. What the game does instead is
 impersonate the construction with two ordinary things, one supplying each leg of a morphism:
 command-line tools carry the prompt down, and TypeScript \texttt{async} event handlers carry the
-reply back up.
+response back up.
 
 The impersonation has three parts. Each one has appeared above.
 
@@ -2632,7 +2582,7 @@ And a morphism becomes an \texttt{async} function. That is where the two directi
 
 \begin{lstlisting}[language=TS]
 const reply = await lower.run(u(prompt));   // the prompt, going down
-return f(prompt, reply);                    // the response, coming back
+return f(prompt, reply);                    // the reply, coming back
 \end{lstlisting}
 
 \subsection{The response flows backwards}
@@ -2643,18 +2593,18 @@ process and opening a socket, so the descent is a real one, made of real program
 At the \texttt{await} the handler suspends and hands the runtime back. The runtime is free to wake
 other handlers while it waits.
 
-The response then flows \emph{backwards} along the path the prompt took. Each reply resumes the
+The response then flows \emph{backwards} along the path the prompt took. Each response resumes the
 handler that fired the prompt, at the very line it stopped on. That handler applies $f$ to turn the
-reply into its own. So $u$ runs on the way down and $f$ on the way back up, in one function body,
+response into its own. So $u$ runs on the way down and $f$ on the way back up, in one function body,
 read top to bottom, with the suspension between them invisible in the text.
 
 The arrows in the trace are exactly this. The arrow \texttt{↓} is a prompt descending as a
 process. The arrow \texttt{↑} is a response climbing back as a resumed function. It is also why a server here can be a
-client without ceasing to be a server. The Plan sits mid-answer with four prompts outstanding
+client without ceasing to be a server. The Plan sits mid-response with four prompts outstanding
 beneath it, still listening, because suspending is not the same as being busy.
 
 And where the fake fails, it fails visibly. Sequential composition cannot be sent over the wire,
-because its shape contains a function and functions do not serialise. A validated reply is
+because its shape contains a function and functions do not serialise. A validated response is
 guaranteed to have the right shape, and is guaranteed nothing about its truth. Both limits are
 consequences of the same substrate that made the impersonation possible in the first place. That is
 the honest summary of the whole exercise. The algebra is real, and everything holding it up is
