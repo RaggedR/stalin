@@ -18,6 +18,10 @@ const D = (s: string) => `\x1b[2m${s}\x1b[0m`;
 const R = (s: string) => `\x1b[31m${s}\x1b[0m`;
 const G = (s: string) => `\x1b[32m${s}\x1b[0m`;
 const Y = (s: string) => `\x1b[33m${s}\x1b[0m`;
+
+/** Whether the typed agent on :8806 was started. The menu never offers a move
+ *  that cannot be made, so the commissar is listed with a reason instead. */
+const agentEnabled = Deno.env.get("STALIN_AGENT") === "1";
 const C = (s: string) => `\x1b[36m${s}\x1b[0m`;
 
 // ── Reading a choice ──────────────────────────────────────────────────
@@ -207,7 +211,8 @@ export interface SowOrder {
 export interface ReapOrder {
   exportGrain: string; tradeSteel: string;
   buy: "engineers" | "tools" | "tractors" | "nothing";
-  build: "tractors" | "armaments";
+  /** The fourth word hands the decision to the typed agent on :8806. */
+  build: "tractors" | "armaments" | "commissar";
 }
 type Labour = SowOrder["labour"];
 /** Move `k` people between roles, never conjuring anybody. */
@@ -356,6 +361,12 @@ export function autumnOptions(st: Dict): Option<ReapOrder>[] {
       detail: `Every tonne to armaments, at ${RULES.armamentYield} of a tonne of guns per tonne of steel. It decides how many men are called up.`,
       order: { ...base, build: "armaments", tradeSteel: "none" },
       why: steel <= 0 ? "no steel to put by" : undefined },
+    { key: "K", title: Y("Ask the commissar where the tractors come from"),
+      detail: "He is answered by a language model, and he may spend the steel " +
+        "either way or refuse it and buy abroad with gold. Nothing checks that " +
+        "what he says is true; only that it is one of three words.",
+      order: { ...base, build: "commissar" },
+      why: agentEnabled ? undefined : 'he is not running; start with "./up.sh --agent"' },
     { key: "M", title: R("Ship everything the grade allows"),
       detail: "The largest export the harvest permits, whatever the towns need.",
       order: { ...base, exportGrain: grade === "bumper" ? "maximum" : "full" },
