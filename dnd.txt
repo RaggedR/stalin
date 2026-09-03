@@ -1,0 +1,14 @@
+Dear Neil,
+
+Claude wants to make a more complicated game. He already has the specification. Rooms and monsters and weapons and treasure. From the specification and the example code in the stalin game - which includes all four combinators and a typed agent implemented using CLI tools and TypeScript async functions, Claude should be able to make a plan to build the actual game with relatively little input from me. It would be pretty straightforward now that we have the tools.
+
+The problem is the graphics. Without the graphics it is a boring turn-based terminal game. I don't know how to do graphics.
+
+The point is that Claude can generate the game from the specification. Claude can also generate the specification from a vaguely worded prompt. Claude is amazing. Because TypeScript is a scripted language, we can actually generate each "level" of the game "on the fly". Generate a specification and generate the code for that level. So a labyrinth with different monsters and items. You can have doors which require keys, and when you go backwards through the labyrinth with the key the door opens. Puzzles which require pieces further down the labyrinth to solve. This is the backwards map.
+
+Furthermore. The monsters can be Claude instances which you can talk to in natural language, and they have some finite set of actions they can take, based on what you say to them. There is no end of cool stuff you can do with that.
+
+Thank you for teaching me about containers.
+
+cheers,
+Robin
