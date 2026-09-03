@@ -20,10 +20,10 @@ dependencies beyond the standard library.
 
 ```
   you ─$ stalin sow|reap ...─▶ [ 8801 gosplan ]                  the Plan
-                    ┌──────────────┼──────────────┐
-        [8802 agriculture]  [8803 industry]  [8804 transport]    commissariats
-                                   │
-                          [8805 foreign trade]
+                    ┌──────────────┼──────────────┬───────────────┐
+        [8802 agriculture]  [8803 industry]  [8804 transport]  [8806 commissar]
+                                   │                            answered by claude
+                          [8805 foreign trade]                  ./up.sh --agent
 ```
 
 The original design brief is in
@@ -179,13 +179,61 @@ never measured tonnes.
 | `⊠` tensor | fields ⊠ mill ⊠ railway | all three work at once and **all three owe a report**; there is no partial year |
 | `◁` chain | produce ◁ haul | what the railway is asked to move is computed **from what was reaped** |
 | `×` product | tractors × armaments | the same steel, one decision: offer both, answer one |
-| `+` sum | the branches of a year | the moves legal in trade are not those legal in winter |
+| `+` sum | (tractors × armaments) + import | steel and gold are **not one road**: the prompt already belongs to one side before it is sent |
 
 And the progression Robin asked for — *export both grain and steel* — is a
 change of combinator. While the line to the port is narrow the sale is a
 **product** (one contract). Build enough rail and it becomes a **tensor**
 (ship both). That is §5's own distinction between `×` and `⊠`, used as a
 game mechanic.
+
+## The typed agent, and the sum it routes
+
+`./up.sh --agent` starts a sixth server on `:8806`. It is a commissariat like
+any other — a container served over a socket, prompted by a CLI hop — except
+that its `Advise` handler spawns the `claude` binary and answers with whatever
+comes back on standard output. From above nothing distinguishes it, which is
+the whole claim: a CLI tool is already a container, and the Claude Code harness
+is a CLI tool.
+
+Choose it with `--build commissar`, and he decides where this year's tractors
+come from. That decision is the sum:
+
+```
+route = (tractors × armaments) + import
+```
+
+Two things are worth knowing before you read the code.
+
+**The library's `◁` cannot express it.** The obvious composite is
+`seqC(commissar, route)` — ask him, and let his reply compute the second prompt.
+It does not typecheck. `seqC` distributes over its right argument's fibres, so
+what it computes is `(commissar ◁ build) + (commissar ◁ import)`, which means
+*decide, then ask*. Routing needs *ask, then decide*. The compiler's own words
+are quoted in [`typed-agent-routing.pdf`](typed-agent-routing.pdf).
+
+**So there is a fifth combinator.** [`branch.ts`](branch.ts) defines
+`seqBranchC`, the undistributed sequential composite: `next` may return any
+shape of the right argument, and the price is that the composite's second
+position is the union of that container's positions rather than the one indexed
+by the shape `next` chose. `seqC` is untouched, `lib/` stays verbatim, and the
+five composites that do not route pay nothing. The routed decision is a value
+like any other, and the trace prints it whole:
+
+```
+↓ gosplan   (commissar <| ((tractors x armaments) + import))
+```
+
+**The sum does not re-tag its positions.** `pos (Left p) = c.Pos p`, so what
+comes back is the chosen summand's own position with nothing wrapped around it,
+and the caller tells the two apart structurally. That is the sum working as
+defined, not a defect — but it means routing costs the caller a discrimination
+the product hands over for free.
+
+The agent is off by default, and deliberately. A seed plays the same game twice,
+which is what `playthrough.sh`, `search.ts`, `calibrate.ts` and `optimise.py`
+all rest on. `--agent` gives that up: the same seed, run three times, produced
+the same recommendation and three different sentences.
 
 ## What the reports are worth
 

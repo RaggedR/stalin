@@ -1,0 +1,598 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage{xcolor}
+\definecolor{seclink}{HTML}{1F4E8C}
+\usepackage[colorlinks=true,linkcolor=seclink,citecolor=seclink,urlcolor=blue]{hyperref}
+\usepackage{parskip}
+\usepackage[most]{tcolorbox}
+
+\definecolor{ink}{HTML}{1A1A1A}
+\definecolor{grey}{HTML}{5F5B54}
+\definecolor{yellowbg}{HTML}{FBF3D5}
+\definecolor{pinkbg}{HTML}{FADDE1}
+\definecolor{kw}{RGB}{20,80,160}
+\definecolor{cmt}{RGB}{110,110,110}
+\definecolor{str}{RGB}{160,60,20}
+\definecolor{codebg}{RGB}{246,246,244}
+
+\tcbset{plainbg/.style={boxrule=0pt, sharp corners, colframe=white,
+  left=4mm, right=4mm, top=3mm, bottom=3mm, before skip=3mm, after skip=3mm}}
+\newtcolorbox{sectionbox}{plainbg, colback=yellowbg}
+\newtcolorbox{alarmbox}{plainbg, colback=pinkbg}
+
+\lstdefinestyle{code}{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{kw}\bfseries,
+  commentstyle=\color{cmt}\itshape,
+  stringstyle=\color{str},
+  breaklines=true,
+  frame=leftline,
+  framesep=7pt,
+  xleftmargin=12pt,
+  rulecolor=\color{gray!45},
+  backgroundcolor=\color{codebg},
+  columns=fullflexible,
+  showstringspaces=false,
+  keepspaces=true,
+  literate=
+    {↓}{{$\downarrow$}}1 {↑}{{$\uparrow$}}1
+    {→}{{$\rightarrow$}}1 {⊠}{{$\boxtimes$}}1
+    {◁}{{$\lhd$}}1 {×}{{$\times$}}1 {—}{{\textemdash}}1 {’}{{'}}1,
+}
+\lstset{style=code}
+\lstdefinelanguage{TS}{
+  morekeywords={const,let,type,interface,function,return,await,async,export,
+    import,if,else,null,extends,new,throw},
+  sensitive=true, morecomment=[l]{//}, morecomment=[s]{/*}{*/},
+  morestring=[b]", morestring=[b]',
+}
+\lstdefinelanguage{SH}{morekeywords={}, sensitive=true, morecomment=[l]{\#}}
+
+\title{\vspace{-2em}Routing, and a Typed Agent}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+\vspace{-3em}
+
+\begin{sectionbox}
+Two things were added to the \texttt{stalin} game. The sum combinator $+$, which had been
+implemented in the library and never used. And a commissariat whose answers are written by a
+language model.
+
+The interesting result is not either feature. It is that the two could not be joined in the
+way we intended, and the compiler said why.
+\end{sectionbox}
+
+\section{What the game was missing}
+
+The library \texttt{lib/algebra.ts} implements all four combinators of Ghani's
+\emph{Containers for Typed Agentic AI}. The game used three of them. The note that accompanies
+the game said so twice, and both times called the gap a future project.
+
+The first gap was routing. The tensor $\boxtimes$ prompts both sides and requires an answer
+from each. The product $\times$ offers both sides and takes an answer from exactly one. The
+sum $+$ is different from both. A prompt to a sum already belongs to one side before it is
+sent, and only that side is ever asked.
+
+The second gap was a typed agent. The claim throughout the note is that a command-line tool is
+already a container, and that the Claude Code harness is a command-line tool. The game never
+tested the claim.
+
+\section{The sum, and why this decision is one}
+
+A player builds tractors from steel, or buys them abroad with gold. These were two independent
+fields on the autumn order, and both could happen in one year, because they draw on different
+stocks.
+
+They are not the same road. Steel spent on tractors is steel that armaments also wanted, so the
+domestic side is a contest and is already a product. Gold spent abroad touches no steel at all,
+so it contests with nothing. Written as an expression,
+
+\begin{lstlisting}[language=TS]
+const build = productC(tractorWorks, armaments, ({ a }) => (a.steel > 0 ? "a" : "b"));
+const route = sumC(build, importTractors);
+\end{lstlisting}
+
+The label the trace prints for that composite is its own best description.
+
+\begin{lstlisting}[language=SH]
+  ↓ gosplan   ((tractors x armaments) + import)
+\end{lstlisting}
+
+\section{The finding}
+
+\begin{alarmbox}
+The composite we set out to write was \texttt{seqC(commissar, route)}. Prompt the commissar,
+and let his reply compute which side of the sum to prompt next. It does not typecheck, and it
+cannot.
+\end{alarmbox}
+
+The sequential combinator $\lhd$ takes a first prompt together with a function from the first
+reply to the second prompt. Call that function \texttt{next}.
+
+State the constraint precisely, because the loose version of it is false. The right argument of
+$\lhd$ may have as many fibres as it likes. The game already relies on that. Its supply chain
+is \texttt{seqC(transport, trade)}, and the trade container has seven fibres.
+
+\begin{lstlisting}[language=TS]
+const supply = seqC(transport, trade);
+\end{lstlisting}
+
+What is constrained is the RETURN TYPE of \texttt{next}. The composite's fibres are indexed by
+pairs, a first shape together with a function landing in one particular second shape, so
+\texttt{next} must have a single fibre's shape as its return type. In the supply chain it does.
+Whatever the haul reports, \texttt{next} returns a \texttt{SellGrain} prompt and nothing else,
+and the seven fibres of trade cost nothing.
+
+A sum is different, and it is different by construction rather than by accident. Its shapes are
+tagged \texttt{left} and \texttt{right}, and those tags are what make it a sum. A \texttt{next}
+that chooses between the two therefore returns a union spanning both fibres, and a union of two
+fibres is not one fibre. Routing is branching, and branching is exactly what \texttt{next} may
+not do.
+
+\subsection{What is really going on}
+
+The account above is what the compiler checks. Underneath it is a shorter statement, and it is
+the one worth carrying away.
+
+A container is written here as the union of its fibres, and every combinator is a conditional
+type, so every combinator distributes over that union. That is the whole trick of the encoding
+and it is why any of this works at all.
+
+Distributing is only sound when the thing being distributed through preserves the union, and
+that is where the four combinators part company. Look at what each does with \texttt{SB}, the
+shapes of its second argument.
+
+\begin{center}
+\begin{tabular}{@{}l@{\hspace{7mm}}l@{\hspace{7mm}}l@{}}
+\toprule
+& \textbf{shape of the composite} & \textbf{where \texttt{SB} sits} \\
+\midrule
+$\boxtimes$ tensor  & \texttt{\{ left: SA; right: SB \}}            & a factor of a product \\
+$\times$ product    & \texttt{\{ a: SA; b: SB \}}                   & a factor of a product \\
+$+$ sum             & \texttt{\{ side: "right"; value: SB \}}       & a factor of a product \\
+$\lhd$ seq          & \texttt{\{ first: SA; next: (r: PA) => SB \}} & the codomain of a function \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+For the first three, \texttt{SB} is a factor of a product, and Set is a distributive category,
+so $A \times (X + Y) \cong (A \times X) + (A \times Y)$ and the distribution is an isomorphism.
+Nothing is lost and the encoding is exact.
+
+For the fourth, \texttt{SB} is the codomain of a function type. The functor $(P_A \to -)$ is a
+right adjoint, so it preserves products and does not preserve coproducts. The distribution is
+performed anyway, because distributing is the only thing a conditional type knows how to do,
+and what it produces is not isomorphic to what was written. Applied to a sum, the composite
+\texttt{seqC(a, sumC(b, c))} is computed as
+
+\[ (a \lhd b) \;+\; (a \lhd c). \]
+
+The distribution is performed correctly. The error message shows it happening: the parameter
+type it reports is a union of two records, one demanding a \texttt{next} that returns
+\texttt{left} and the other a \texttt{next} that returns \texttt{right}.
+
+What routing needs is the other expression.
+
+\[ a \lhd (b + c). \]
+
+These are not the same. Read them at the level of shapes. The first offers a choice between a
+function landing in \texttt{b} and a function landing in \texttt{c}. The second offers a
+function that lands in one or the other, deciding per reply which. In the notation of ordinary
+type theory this is the familiar non-isomorphism
+
+\[ (P \to B) + (P \to C) \;\ncong\; P \to (B + C), \]
+
+and it fails in the direction that matters. Every function on the left gives a function on the
+right, and a function on the right that genuinely branches gives neither.
+
+So the sentence to keep is this. Three of the combinators put the second argument's shapes in a
+product, where distribution is exact. The fourth puts them in a function space, where it is
+not. What is computed is strictly smaller than what was asked for, and a \texttt{next} that
+routes lives in the difference.
+
+A caveat about how far this claim reaches. The failure in TypeScript is verified, and the
+compiler output below is the verification. The reading of it as the distributivity failure
+above is exactly that, a reading. It has not been checked against Appendix~B, and it has not
+been written down in Agda or Lean, which is the obvious next thing to do with it.
+
+The file predicts this in its own comment on \texttt{SeqC}.
+
+\begin{quote}
+\emph{What is lost is a \texttt{next} that branches between shapes of \texttt{d}; such a
+function has a union return type and lies in no single fibre.}
+\end{quote}
+
+We wrote it down and asked the compiler. Here is the whole of what we asked.
+
+\begin{lstlisting}[language=TS]
+const route = sumC(builder, importer);
+const advised = seqC(commissar, route);
+
+export const shape = advised.step(
+  { tag: "Advise", year: 1931 },
+  (r) =>
+    r.recommend === "buy"
+      ? route.right({ tag: "Buy", gold: 100 })
+      : route.left({ tag: "Build", steel: 50 }),
+);
+
+export const outcome = await advised.run(shape, 0);
+\end{lstlisting}
+
+And here is what \texttt{deno check} answered, trimmed only where it repeats itself.
+
+\begin{lstlisting}[language=SH]
+$ deno check spike.ts
+TS2345 [ERROR]: Argument of type '{ first: ...; next: (r: ...) =>
+  { side: "right"; ... } | { side: "left"; ... }; }' is not assignable to
+  parameter of type '{ first: ...; next: (r: ...) => { side: "left"; ... }; }
+  | { first: ...; next: (r: ...) => { side: "right"; ... }; }'.
+      The types returned by 'next(...)' are incompatible between these types.
+        Type '{ side: "right"; ... } | { side: "left"; ... }' is not
+          assignable to type '{ side: "right"; ... }'.
+          Type '{ side: "left"; ... }' is not assignable to type
+            '{ side: "right"; ... }'.
+            Types of property 'side' are incompatible.
+              Type '"left"' is not assignable to type '"right"'.
+export const outcome = await advised.run(shape, 0);
+                                         ~~~~~
+error: Type checking failed.
+\end{lstlisting}
+
+Read where it fails. The call to \texttt{step} is accepted. The dependent pair can be built,
+and it has a perfectly good type. What is rejected is \texttt{run}, because that pair is not a
+shape of the composite container. The construction exists and the composite has no room for it.
+
+This is the limit the note describes in the abstract, met in the concrete. Restricting
+\texttt{next} to a single fibre is exactly what buys the position type back, and the price of
+that purchase is a \texttt{next} that cannot branch.
+
+The consequence is worth stating plainly, because it is a claim about the algebra and not about
+one call site. Three of the four combinators nest inside each other freely. The fourth carries
+a side condition, and $+$ is the one operator guaranteed to violate it. So the four are not
+closed under nesting in this encoding. They are three that compose, and one that composes with
+everything whose second prompt is already decided.
+
+None of this is a defect in Ghani's construction. In dependent type theory the shapes of a sum
+are a coproduct, and a function out of a coproduct may branch as much as it likes. The
+obstruction lives entirely in the encoding, and it was put there deliberately, which
+Section~\ref{sec:repair} takes up.
+
+\section{What we wrote instead}
+
+The agent still chooses the route. The dependency survives as an \texttt{await} and a branch,
+which is what an ordinary program would have written in the first place.
+
+\begin{lstlisting}[language=TS]
+const word = await commissar.run({
+  tag: "Advise", year, steel: s.steel, gold: s.gold,
+  tractors: s.tractors, warReserve: s.warReserve,
+}, depth);
+
+const shape = word.recommend === "buy"
+  ? route.right({ tag: "BuyTractors", gold: s.gold, year })
+  : route.left(build.offer(
+    { tag: "BuildTractors", steel: word.recommend === "tractors" ? s.steel : 0,
+      plantCapacity: s.plantCapacity, year },
+    { tag: "BuildArmaments", steel: word.recommend === "armaments" ? s.steel : 0, year },
+  ));
+
+const outcome = await route.run(shape, depth);
+\end{lstlisting}
+
+Only the sum is algebraic here. That is worth saying plainly rather than hiding, because the
+whole argument of the note is that the algebra motivates the architecture and does not verify
+it. Here is a case where the algebra could not even express what the architecture does.
+
+Name what that costs, because it is not elegance. The composite \texttt{seqC(commissar, route)}
+would have been a \emph{value}. It would have had a label, it could have been passed to another
+function, and it could have been nested inside a further combinator or announced in the trace
+as one expression. Four lines of \texttt{await} and \texttt{if} are none of those things. The
+composition happens during the run and appears nowhere in the program.
+
+So the property given up is composability, which is the one property a first-class algebra
+exists to provide. That is too much to give up, and Section~\ref{sec:fix} gets it back.
+
+\section{The combinator that does not distribute}
+\label{sec:fix}
+
+If the trouble is that \texttt{seqC} distributes over its right argument's fibres, the repair is
+a sequential combinator that declines to. It is about forty lines, it lives in
+\texttt{branch.ts}, and it differs from \texttt{seqC} in exactly one place.
+
+\begin{lstlisting}[language=TS]
+// lib/algebra.ts -- next returns SB, bound fibre by fibre as the
+// conditional type distributes over B
+export type SeqC<A extends Cont, B extends Cont> =
+  A extends Fib<infer SA, infer PA>
+    ? B extends Fib<infer SB, infer PB>
+      ? Fib<{ first: SA; next: (r: PA) => SB }, { first: PA; second: PB }>
+      : never
+    : never;
+
+// branch.ts -- next returns Shape<B>, the whole union, and B is
+// never distributed over at all
+export type SeqBranchC<A extends Cont, B extends Cont> =
+  A extends Fib<infer SA, infer PA>
+    ? Fib<{ first: SA; next: (r: PA) => Shape<B> },
+          { first: PA; second: Positions<B> }>
+    : never;
+\end{lstlisting}
+
+The \texttt{run} method is identical to \texttt{seqC}'s, line for line. Nothing changes at run
+time. What changes is what may be written down beforehand.
+
+The price is named in the second position. Where \texttt{SeqC} has \texttt{PB}, the positions of
+the fibre \texttt{next} landed in, \texttt{SeqBranchC} has \texttt{Positions<B>}, the union of
+all of them. That is forced rather than chosen. After a \texttt{next} that branches there is no
+single shape left to index by, because which shape it returned is a fact about the run and not
+about the program. So which side answered becomes a run-time question, which is the same bargain
+the sum already makes.
+
+What was not paid matters as much. The library is untouched. The five composites that do not
+route keep their exact indexed positions and pay nothing for this file, and \texttt{lib/} stays
+verbatim from upstream, which is what \texttt{lib/README.md} promises. The cost falls only on
+the composite that needs it.
+
+And the routed decision is a value again.
+
+\begin{lstlisting}[language=TS]
+const route   = sumC(build, importTractors);
+const advised = seqBranchC(commissar, route);
+
+const { first: word, second: outcome } = await advised.run(
+  advised.step(
+    { tag: "Advise", year, steel: s.steel, gold: s.gold,
+      tractors: s.tractors, warReserve: s.warReserve },
+    (r) => r.recommend === "buy"
+      ? route.right({ tag: "BuyTractors", gold: s.gold, year })
+      : route.left(build.offer(
+        { tag: "BuildTractors", steel: r.recommend === "tractors" ? s.steel : 0,
+          plantCapacity: s.plantCapacity, year },
+        { tag: "BuildArmaments", steel: r.recommend === "armaments" ? s.steel : 0, year },
+      )),
+  ),
+  depth,
+);
+\end{lstlisting}
+
+It has a label, it can be nested, and the trace prints the whole of it as one expression.
+
+\begin{lstlisting}[language=SH]
+↓ gosplan   (commissar <| ((tractors x armaments) + import))
+\end{lstlisting}
+
+So the developer writes one combinator by hand, once, and everything built with it composes.
+
+\section{A sum does not label what comes back}
+\label{sec:repair}
+
+The definition of $+$ in \texttt{lib/algebra.ts} carries a comment which matters at the call
+site. The shapes are tagged \texttt{left} and \texttt{right}. The positions are not.
+
+\begin{lstlisting}[language=TS]
+// The router reads which summand the prompt lies in. Note the position
+// is NOT re-tagged: pos (Left p) = c.Pos p, exactly as in Appendix B.
+\end{lstlisting}
+
+So what comes back from \texttt{route.run} is the chosen side's own reply with nothing wrapped
+around it. Which side answered has to be recovered from the reply itself.
+
+\begin{lstlisting}[language=TS]
+if ("side" in outcome) {
+  if (outcome.side === "a") { ...tractors were built... }
+  else { ...steel went to the war reserve... }
+} else {
+  s.gold = round(s.gold - outcome.goldUsed);
+  s.tractors += outcome.tractors;
+}
+\end{lstlisting}
+
+The product hands you a tag for free, because a product's position type is a sum and has to say
+which side it came from. A sum's position type is not, and does not. The caller pays the
+difference. This is the combinator behaving exactly as defined, and it is still a cost.
+
+\subsection{This is the repair, done by hand}
+
+Those two paragraphs and Section~3 are the same fact seen twice, which is worth making explicit.
+
+The composite $\lhd$ could not build was one whose second position is indexed by a shape chosen
+at run time. Ask what such a composite would have to look like and the answer falls out. Let
+\texttt{next} return the full union of the right container's shapes, and let the composite's
+second position be the union of that container's positions. Then the pair typechecks, and the
+caller is handed a value that could have come from either side.
+
+That is precisely the value the branch above receives, and the test \texttt{"side" in outcome}
+is precisely the discrimination such a caller would have to perform.
+
+Said in the language of Section~3.1, widening the position to a union is how the undistributed
+expression $a \lhd (b + c)$ gets built in a setting that can only compute the distributed one.
+The run-time test is what stands in for the index the type gave up. It is the same bargain
+\texttt{seqBranchC} makes in Section~\ref{sec:fix}, which is not a coincidence, because they are
+the same expression and the sum was already paying for it before $\lhd$ arrived.
+
+The price of that bargain is the indexed position type, which is the one thing the whole
+encoding was built to keep. Over a finite index a dependent type is a table, and a table is what
+TypeScript can write down. Widen the position to a union and the table is gone. What makes this
+affordable is that the widening is local: it happens inside one combinator, used at one site,
+and everything else keeps its table.
+
+So the honest summary is not that $\lhd$ and $+$ cannot be composed. It is that they can be, at
+the cost of the property that made either of them worth encoding. We chose to pay it once, at
+one call site, in four lines of ordinary control flow, rather than in the definition of the
+combinator where every other use would pay it too.
+
+\section{The typed agent}
+
+The new server on port 8806 is a commissariat like the other four. It parses a prompt off the
+wire, dispatches on the tag, and answers. One handler differs.
+
+\begin{lstlisting}[language=TS]
+async function askClaude(prompt: string): Promise<string> {
+  const cmd = new Deno.Command("claude", {
+    args: ["-p", prompt], stdout: "piped", stderr: "piped",
+  });
+  const { code, stdout } = await cmd.output();
+  if (code !== 0) throw new Error(`claude exited ${code}`);
+  return new TextDecoder().decode(stdout).trim();
+}
+\end{lstlisting}
+
+That is the same \texttt{Deno.Command} every other hop in the game is made of. A process, an
+argument vector, and standard output. From the Plan's side nothing distinguishes this
+commissariat from the smelter.
+
+The prompt gives him the state and the three words he may answer with. It does not tell him
+what the game is scored on, and it does not say which answer is wanted.
+
+\subsection{Two boundaries, and one of them is real}
+
+The reply crosses two boundaries. First from the model's standard output into an
+\texttt{Advice} inside the server. Then from the server's HTTP response into an
+\texttt{Advice} inside the Plan. Both are decoders, and neither is a type check.
+
+The first was tested directly against the kinds of thing a model actually returns.
+
+\begin{lstlisting}[language=SH]
+accepted  well-formed      -> {"recommend":"buy","note":"gold is ample"}
+accepted  fenced           -> {"recommend":"tractors","note":"the fields need them"}
+REJECTED  out of union     -> null
+REJECTED  note missing     -> null
+REJECTED  prose, not JSON  -> null
+REJECTED  wrong type       -> null
+\end{lstlisting}
+
+A fenced code block is forgiven, because a model asked for bare JSON sometimes wraps it.
+Nothing else is. In particular a fourth word fails rather than falling back to a default,
+because a default would quietly turn an unchecked type into one that looks checked.
+
+The compile-time side of the same rule is asserted in \texttt{type-tests.ts}, which is checked
+and never run.
+
+\begin{lstlisting}[language=TS]
+expect<Advice["recommend"]>("tractors");
+expect<Advice["recommend"]>("armaments");
+expect<Advice["recommend"]>("buy");
+// @ts-expect-error  a fourth word is not a thing he can be understood to say
+expect<Advice["recommend"]>("potatoes");
+\end{lstlisting}
+
+That file fails if a legal move is rejected, and it fails if an illegal one is accepted, since
+an unused \texttt{@ts-expect-error} is itself an error. We checked that the new assertions have
+teeth by making the illegal word legal.
+
+\begin{lstlisting}[language=SH]
+$ deno check type-tests.ts
+TS2578 [ERROR]: Unused '@ts-expect-error' directive.
+// @ts-expect-error  a fourth word is not a thing he can be understood to say
+error: Type checking failed.
+\end{lstlisting}
+
+\section{What it costs}
+
+The game was reproducible. A seed played the same game twice, and four separate tools rest on
+that. The scripted playthrough doubles as a regression test, the strategy search compares
+outcomes across a grid, and the balance harness does coordinate descent on the constants.
+
+An agent is not reproducible. The same seed was played three times, from a fresh game each
+time.
+
+\begin{lstlisting}[language=SH]
+run 1: imported  |  Foreign tractors bought with our idle gold raise the harvest immediate
+run 2: imported  |  Gold buys foreign tractors outright, so the harvest rises while the 2
+run 3: imported  |  Foreign tractors bought with idle gold raise the harvest immediately w
+\end{lstlisting}
+
+Three different sentences. The recommendation happened to agree all three times, which is not a
+guarantee of anything. So the agent is started only by \texttt{./up.sh --agent}, and without
+that flag the Plan does not build the leaf at all. The five-server game is untouched, and we
+checked that rather than assuming it: the scripted playthrough was captured before the change
+and after it, and the two are byte-identical.
+
+\section{Playing it}
+
+\begin{lstlisting}[language=SH]
+$ ./up.sh --agent
+up: gosplan :8801  agriculture :8802  industry :8803  transport :8804  trade :8805  commissar :8806
+    the commissar is answered by claude; this game is no longer reproducible from its seed
+
+$ stalin new --seed 1928
+$ stalin sow --labour 90,0,14,10 --procure firm
+$ stalin reap --export surplus --buy engineers --build commissar
+\end{lstlisting}
+
+The fourth word on \texttt{--build} is the new one. Here is a year decided by the commissar.
+
+\begin{lstlisting}[language=SH]
+  1928
+  harvest    252.81  (adequate, 2.63/worker)   without tractors: 252.81
+  steel           2  (deficit)   tractors +1 (1 imported)   rail +20
+  traded         28 gold   grain out 56   steel in 0
+  reserve         0  for 1941   engineers 1   plant 20
+  dead            1   fields 96 drivers 0 mill 13 rail 10
+    — Narkomzem: 86% of quota; wreckers and weather are blamed.
+    — Narkomtiazhprom: quota fulfilled.
+    — Narkomput: 50% of quota; wreckers and weather are blamed.
+    — The Commissar: Gold reserves are ample and foreign tractors raise the harvest
+      without consuming the scarce steel, which can then be held in reserve.
+\end{lstlisting}
+
+He took the right branch of the sum. One tractor was imported, and the two units of steel were
+left alone. The trace shows the composite above the hops it turned into.
+
+\begin{lstlisting}[language=SH]
+↓ gosplan   Reap order={"exportGrain":"surplus","tradeSt…
+  ↓ gosplan   ((tractors x armaments) + import)
+↑ gosplan   {year, harvest, steel, importedTractors, …}
+\end{lstlisting}
+
+His dispatch sits in the same list as the other three, in the same typeface, worth the same
+amount. The note already said what that is. Their type guaranteed their shape, and nothing
+guaranteed their truth. The difference is that the first three were written by arithmetic a
+person wrote, and the fourth was not.
+
+\section{What was verified}
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Claim} & \textbf{How} \\
+\midrule
+The composite typechecks & \texttt{deno check *.ts lib/*.ts}, no errors \\
+The four-word order is validated on the wire & \texttt{parseGos} rejects a fifth word \\
+The summands stay apart & \texttt{type-tests.ts}, mutation-tested \\
+The decoder refuses bad model output & six cases, four rejected \\
+The five-server game is unchanged & playthrough byte-identical before and after \\
+The sum actually runs & trace shows the label and the branch taken \\
+The routed composite is a value & the trace prints it as one expression \\
+The agent is not deterministic & same seed, three runs, three replies \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{sectionbox}
+The feature took an afternoon. The finding is worth more than the feature.
+
+Three combinators nest inside each other freely. The fourth requires that its second prompt be
+decided by the time the first reply arrives, and routing is the operator that cannot promise
+that. So the four as given are not closed under nesting in this encoding, and a note that claims
+the combinators are a language for writing the order down should say so.
+
+What it costs to close them is one combinator written by hand, once, and one position type
+widened to a union inside it. Composability survives. The routed decision is a value like every
+other composite in the game.
+
+None of this touches Ghani's construction, where the shapes of a sum are a coproduct and a
+function out of a coproduct branches freely. It is a property of the encoding, and it was
+bought on purpose. Over a finite index a dependent type is a table, and a table is what
+TypeScript can write down. A sum is where the index stops being a single fibre, and $\lhd$ has
+nothing left to stand on.
+\end{sectionbox}
+
+\end{document}

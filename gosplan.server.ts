@@ -8,8 +8,12 @@
 //     produce  = harvest (x) smelt (x) lay        -- the tensor: all three, at once
 //     supply   = produce <| haul                  -- the chain: what moves depends on what was reaped
 //     build    = tractors x armaments             -- the product: one steel, one contract
+//     route    = build + import                   -- the sum: steel or gold, and they are not one road
 //     sale     = grain x steel   (narrow rail)    -- the product again...
 //              = grain (x) steel (wide rail)      -- ...until the port line can carry both
+//
+// The sum is reached only under `--build commissar`, where a language model on
+// :8806 decides which summand the prompt belongs to. See typed-agent-routing.pdf.
 //
 // It also keeps two ledgers. The TRUE one, because the grain physically
 // exists; and the REPORTED one, assembled from dispatches, which is what the
@@ -23,16 +27,24 @@ import {
 } from "./state.ts";
 import type { HarvestReport, RailReport, SaleReport, SmeltReport } from "./containers.ts";
 import {
-  type AgricultureC, type ArmamentsC, type ForeignTradeC,
-  type SmelterC, type SteelTrade, type TractorWorksC,
+  type AgricultureC, type ArmamentsC, type CommissarC, type ForeignTradeC,
+  type ImportC, type SmelterC, type SteelTrade, type TractorWorksC,
   type TransportC, type YearReport,
   exportPlan, steelPlan,
 } from "./containers.ts";
-import { leaf, productC, seqC, tensorC } from "./lib/algebra.ts";
+import { leaf, productC, seqC, sumC, tensorC } from "./lib/algebra.ts";
+import { seqBranchC } from "./branch.ts";
 import { serveContainer, trace } from "./lib/wire.ts";
 import { round } from "./commissariat.ts";
 
-const AGRI = 8802, IND = 8803, TR = 8804, TD = 8805;
+const AGRI = 8802, IND = 8803, TR = 8804, TD = 8805, CM = 8806;
+
+/** The typed agent is opt-in, and off by default. Everything that compares one
+ *  playthrough with another — `playthrough.sh`, `search.ts`, `calibrate.ts`,
+ *  `optimise.py` — rests on a seed producing the same game twice. A leaf
+ *  answered by a language model does not have that property, so it is started
+ *  only by `./up.sh --agent` and the Plan does not build the leaf without it. */
+const agentEnabled = Deno.env.get("STALIN_AGENT") === "1";
 
 // ── Decoders: `unknown` off the wire, back to a position ──────────────
 const rec = <T>(keys: readonly string[], u: unknown): T | null => {
@@ -77,6 +89,31 @@ const trade = leaf<ForeignTradeC>("trade", TD, {
   Reset: (u) => rec(["ok"], u),
 });
 
+// Foreign tractors, as a container of their own. The same port and the same
+// handler as the `BuyTractors` fibre of `trade` above; split out because a
+// combinator joins two CONTAINERS, and a fibre of a larger container is not
+// one. Exactly why heavy industry is served as three containers on one port.
+const importTractors = leaf<ImportC>("import", TD, {
+  BuyTractors: (u) => rec(["tractors", "goldUsed"], u),
+});
+
+// The typed agent. Its decoder is the only check in the system that a language
+// model's output is a position of this container: `recommend` must be one of
+// three words, and a reply that is not is a failed fibre rather than a default.
+const commissar = agentEnabled
+  ? leaf<CommissarC>("commissar", CM, {
+    Advise: (u) => {
+      if (!isRecord(u) || !isStr(u.note)) return null;
+      const r = u.recommend;
+      return r === "tractors" || r === "armaments" || r === "buy"
+        ? { recommend: r, note: u.note }
+        : null;
+    },
+    Report: (u) => rec(["year", "quotaMet", "output", "note"], u),
+    Reset: (u) => rec(["ok"], u),
+  })
+  : null;
+
 // ── The workflow algebra ──────────────────────────────────────────────
 const fieldsAndMill = tensorC(agri, smelter);
 const produce       = tensorC(fieldsAndMill, transport);      // (x) three sides
@@ -92,6 +129,24 @@ const build         = productC(tractorWorks, armaments,       //  x  one steel, 
   // The policy reads the decision off the shape: the side that was offered
   // the steel is the side that answers.
   ({ a }) => (a.steel > 0 ? "a" : "b"));
+
+// +  ROUTING. Steel or gold, and they are not the same road. Building tractors
+// spends steel that armaments also want, so the left summand is a product and
+// its two sides compete. Buying them abroad spends gold and touches no steel at
+// all, so it competes with nothing. A sum is the right operator precisely
+// because the prompt already belongs to one side before it is sent — the Plan
+// does not offer both and take one answer, it routes.
+const route = sumC(build, importTractors);
+
+// <|  ASK, THEN DECIDE. The library's seqC cannot express this one: a `next`
+// that returns route.left(...) or route.right(...) spans both fibres of the
+// sum, and seqC distributes over those fibres, so what it computes is
+// (commissar <| build) + (commissar <| import) -- decide first, then ask. That
+// is backwards. `seqBranchC` is the undistributed composite, and it costs the
+// indexed position: what comes back is the union of the sum's positions, and
+// which side answered is a run-time question. See branch.ts and
+// typed-agent-routing.pdf.
+const advised = commissar === null ? null : seqBranchC(commissar, route);
 
 export const flowLabel = `${supply.label} ; ${build.label}`;
 
@@ -221,8 +276,13 @@ export interface ReapOrder {
   buy: "engineers" | "tools" | "tractors" | "nothing";
   /** Where this year's steel goes. Not a share: a decision. The two works are
    *  separate containers so the Plan takes their PRODUCT — both offered, one
-   *  answered — and a year's steel cannot be quietly spent on both. */
-  build: "tractors" | "armaments";
+   *  answered — and a year's steel cannot be quietly spent on both.
+   *
+   *  The fourth word hands the decision to the commissar on :8806, who is
+   *  answered by a language model. He may also decline the steel entirely and
+   *  spend gold abroad instead, which is the branch of the sum the other three
+   *  words cannot reach. Available only under `./up.sh --agent`. */
+  build: "tractors" | "armaments" | "commissar";
 }
 
 export type GosPrompt =
@@ -374,7 +434,9 @@ async function runAutumn(order: ReapOrder, depth: number): Promise<YearReport> {
   }
 
   // ── PRODUCT: tractors x armaments. The same steel; offer both, answer one.
-  trace(depth, "down", "gosplan", build.label);
+  // Announced in the branch that actually runs it: under `--build commissar`
+  // the product is the LEFT SUMMAND of a sum, and the trace should say so
+  // rather than name the product twice.
   // The works must open BEFORE the build, not after it. Opening it afterwards
   // was an ordering bug with two heads. First, `build` spends ALL the steel,
   // so by the time the old check ran there was never 20 left and the works
@@ -391,7 +453,66 @@ async function runAutumn(order: ReapOrder, depth: number): Promise<YearReport> {
 
   const toTractors = order.build === "tractors";
   let tractorsBuilt = 0;
-  if (s.steel > 0) {
+  let commissarNote: string | null = null;
+
+  if (order.build === "commissar") {
+    // ── SUM: (tractors x armaments) + buy abroad. The routing combinator.
+    //
+    // The commissar is asked first, and his reply decides which summand the
+    // prompt belongs to. What this deliberately is NOT is seqC(commissar,
+    // route). A `next` returning route.left(...) or route.right(...) has a
+    // union return type spanning both fibres of the sum, and `SeqC` demands a
+    // `next` landing in exactly one — so the composite has no shape to run,
+    // and the compiler says so. That is the limit of §"Two limits" met in the
+    // wild; typed-agent-routing.pdf quotes the error in full. The dependency
+    // survives as an await and a branch. Only the sum is algebraic here.
+    if (advised === null) {
+      throw new Error(
+        'the commissar is not running; start the servers with "./up.sh --agent"',
+      );
+    }
+    trace(depth, "down", "gosplan", advised.label);
+
+    // One expression, and a value. `next` reads the commissar's reply and only
+    // then picks the side, which is what the whole decision is for.
+    const { first: word, second: outcome } = await advised.run(
+      advised.step(
+        { tag: "Advise", year, steel: s.steel, gold: s.gold,
+          tractors: s.tractors, warReserve: s.warReserve },
+        (r) =>
+          r.recommend === "buy"
+            ? route.right({ tag: "BuyTractors", gold: s.gold, year })
+            : route.left(build.offer(
+              { tag: "BuildTractors", steel: r.recommend === "tractors" ? s.steel : 0,
+                plantCapacity: s.plantCapacity, year },
+              { tag: "BuildArmaments", steel: r.recommend === "armaments" ? s.steel : 0, year },
+            )),
+      ),
+      depth,
+    );
+    commissarNote = `The Commissar: ${word.note}`;
+    // The sum does not re-tag its positions — pos (Left p) = c.Pos p, as
+    // `sumC` says — so what comes back is the chosen summand's own position
+    // with nothing wrapped around it. Which side answered is therefore
+    // recovered structurally rather than read off a tag. That is the sum
+    // behaving as defined, and it is the price of routing: the caller must
+    // already know how to tell the two positions apart.
+    if ("side" in outcome) {
+      if (outcome.side === "a") {
+        tractorsBuilt = outcome.value.built;
+        s.tractors += outcome.value.built;
+        s.steel = round(s.steel - outcome.value.steelUsed);
+      } else {
+        s.warReserve = round(s.warReserve + outcome.value.reserved);
+        s.steel = round(s.steel - outcome.value.steelUsed);
+      }
+    } else {
+      s.gold = round(s.gold - outcome.goldUsed);
+      s.tractors += outcome.tractors;
+      importedTractors += outcome.tractors;
+    }
+  } else if (s.steel > 0) {
+    trace(depth, "down", "gosplan", build.label);
     const made = await build.run(
       build.offer(
         { tag: "BuildTractors", steel: toTractors ? s.steel : 0,
@@ -452,6 +573,7 @@ async function runAutumn(order: ReapOrder, depth: number): Promise<YearReport> {
     dead, workforce: game.workforce, stocks: { ...s },
     dispatches: [
       ...notes,
+      ...(commissarNote === null ? [] : [commissarNote]),
       ...(exp.refused ? [`Narkomvneshtorg: an export of "${order.exportGrain}" is not possible on a ${harvest.grade} harvest; none was shipped.`] : []),
       ...(st.refused ? [`Narkomvneshtorg: steel is in ${gradeSteel(smelt.steel, committed)}; "${order.tradeSteel}" is not a trade that exists this year.`] : []),
       ...(haul.stranded > 0 ? [`Narkomput: ${haul.stranded} of grain could not be moved and was left at the sidings.`] : []),
@@ -486,6 +608,9 @@ async function answer(p: GosPrompt, depth: number): Promise<GosReply> {
       await smelter.run({ tag: "Reset", seed: p.seed }, depth);
       await transport.run({ tag: "Reset", seed: p.seed }, depth);
       await trade.run({ tag: "Reset", seed: p.seed }, depth);
+      // The commissar forgets too, when he is running. His books are the only
+      // thing about him a seed controls; what he actually says is not.
+      if (commissar !== null) await commissar.run({ tag: "Reset", seed: p.seed }, depth);
       game = fresh(p.seed);
       return { kind: "status", year: game.year, season: game.season, over: false,
                stocks: game.stocks, workforce: game.workforce, believed: 0, baseline: 0,
@@ -575,7 +700,8 @@ export function parseGos(u: unknown): GosPrompt | null {
       if (!isRecord(o) || !isStr(o.exportGrain) || !isStr(o.tradeSteel)) return null;
       if (o.buy !== "engineers" && o.buy !== "tools" && o.buy !== "tractors" &&
           o.buy !== "nothing") return null;
-      if (o.build !== "tractors" && o.build !== "armaments") return null;
+      if (o.build !== "tractors" && o.build !== "armaments" &&
+          o.build !== "commissar") return null;
       return { tag: "Reap", order: {
         exportGrain: o.exportGrain, tradeSteel: o.tradeSteel,
         buy: o.buy, build: o.build,
