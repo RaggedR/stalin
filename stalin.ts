@@ -18,7 +18,8 @@ const USAGE = `stalin — the First Five-Year Plan, 1928-1932
   stalin new [--seed N]
   stalin sow  --labour F,D,M,R --procure light|firm|total
   stalin reap [--export none|surplus|full|maximum] [--steel none|buy]
-              [--buy engineers|tools|tractors|nothing] [--build tractors|armaments]
+              [--buy engineers|tools|tractors|nothing]
+              [--build tractors|armaments|commissar]
 
   stalin status
   stalin reckoning
@@ -40,7 +41,9 @@ const USAGE = `stalin — the First Five-Year Plan, 1928-1932
              that exports its steel is not industrialising.
   --build    where this year's steel goes. Not a share: a decision. Armaments
              return nothing else, ever — they are only worth anything if 1941
-             happens.`;
+             happens. The fourth word, commissar, hands the decision to a
+             language model on :8806 and needs ./up.sh --agent. He may also
+             refuse the steel and buy tractors abroad with gold instead.`;
 
 async function ask(prompt: unknown): Promise<Record<string, unknown>> {
   let res: Response;
@@ -189,7 +192,7 @@ switch (cmd) {
       console.log(`    --buy      engineers | tools | tractors | nothing`);
       console.log(D(`                 engineer ${RULES.engineerGold}g -> +${RULES.engineerCapacity} mill;  tools ${RULES.toolsGold}g -> +10 plant;`));
       console.log(D(`                 tractors ${RULES.tractorGold}g each, ready to drive — no engineer or works needed`));
-      console.log(`    --build    tractors | armaments`);
+      console.log(`    --build    tractors | armaments | commissar`);
       console.log(D(`                 where ALL this year's steel goes. Armaments return nothing else, ever.`));
       const gate: string[] = [];
       if (s.plantCapacity === 0) gate.push("no plant yet: tractors cannot be built until you hold an engineer and 20 spare steel");

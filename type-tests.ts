@@ -9,8 +9,10 @@
 // It is something that cannot be written down.
 
 import {
-  type ExportChoice, type SteelTrade, exportPlan, steelPlan,
+  type Advice, type ArmamentsC, type ExportChoice, type ImportC,
+  type SteelTrade, type TractorWorksC, exportPlan, steelPlan,
 } from "./containers.ts";
+import { leaf, productC, sumC } from "./lib/algebra.ts";
 
 const expect = <T>(_x: T): void => {};
 
@@ -73,3 +75,33 @@ const impossible = steelPlan("deficit", "sell");
 const atFailure: { grade: "failure"; choice: "none" } = exportPlan("failure", "none");
 const atBumper: { grade: "bumper"; choice: "none" | "surplus" | "full" | "maximum" } =
   exportPlan("bumper", "full");
+
+// ── The sum keeps its summands apart ──────────────────────────────────
+// Routing is a claim about which side a prompt belongs to, and the claim is
+// checked. `route.left` takes a shape of the product and `route.right` a shape
+// of the import container, and neither will take the other's.
+const route = sumC(
+  productC(
+    leaf<TractorWorksC>("tractors", 8803, { BuildTractors: () => null }),
+    leaf<ArmamentsC>("armaments", 8803, { BuildArmaments: () => null }),
+    () => "a",
+  ),
+  leaf<ImportC>("import", 8805, { BuyTractors: () => null }),
+);
+
+const abroad = route.right({ tag: "BuyTractors", gold: 100, year: 1931 });
+// @ts-expect-error  a domestic prompt is not a prompt of the right summand
+const misrouted = route.right({ tag: "BuildTractors", steel: 10, plantCapacity: 20, year: 1931 });
+// @ts-expect-error  and the import container has no such fibre either
+const notAFibre = route.right({ tag: "BuildArmaments", steel: 10, year: 1931 });
+
+// ── The commissar may say exactly three words ─────────────────────────
+// Nothing enforces this at the far end: the reply is written by a language
+// model and arrives as text. What the type does is oblige the decoder in
+// `gosplan.server.ts` to establish it, and oblige every reader of an `Advice`
+// to have handled only these three cases.
+expect<Advice["recommend"]>("tractors");
+expect<Advice["recommend"]>("armaments");
+expect<Advice["recommend"]>("buy");
+// @ts-expect-error  a fourth word is not a thing he can be understood to say
+expect<Advice["recommend"]>("potatoes");

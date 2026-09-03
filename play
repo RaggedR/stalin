@@ -2,6 +2,7 @@
 # play — start the commissariats and open an interactive plan.
 set -e
 cd "$(dirname "$0")"
-./up.sh >/dev/null
+./up.sh "$@" >/dev/null
 trap './down.sh >/dev/null 2>&1 || true' EXIT INT TERM
-deno run --quiet --allow-net play.ts "$@"
+[ "$1" = "--agent" ] && shift
+deno run --quiet --allow-net --allow-env play.ts "$@"

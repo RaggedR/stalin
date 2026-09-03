@@ -1,0 +1,6 @@
+Dear Neil,
+
+Claude went ahead and added routing and a typed agent which controls the routing to the game. The big discovery was that seq doesn't "play nicely" with routing. This can be "fixed" by requiring the developer to implement every seq "by hand" from the specification. If you do it like this then composability is not lost. Where formal verification fails we have run-time checks. So now we have all four combinators and a typed agent. What do you want to build with it?
+
+cheers,
+Robin

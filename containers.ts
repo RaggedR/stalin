@@ -33,6 +33,7 @@ export interface RailReport { added: number; steelUsed: Steel }
 export interface HaulReport { toIndustry: Grain; toPort: Grain; stranded: Grain; short: Grain }
 export interface SaleReport { gold: number; price: number; sold: number }
 export interface PurchaseReport { steel: Steel; grainUsed: Grain }
+export interface ImportReport { tractors: number; goldUsed: number }
 
 /** What a commissariat says. Identical in TYPE to what is true. */
 export interface Dispatch {
@@ -136,10 +137,43 @@ export type ForeignTradeC =
   | Fib<{ tag: "BuySteel"; grain: Grain; year: number }, PurchaseReport>
   | Fib<{ tag: "Hire"; gold: number; want: "engineers" | "tools"; year: number },
         { engineers: number; plantCapacity: number; goldUsed: number }>
-  | Fib<{ tag: "BuyTractors"; gold: number; year: number },
-        { tractors: number; goldUsed: number }>
+  | Fib<{ tag: "BuyTractors"; gold: number; year: number }, ImportReport>
   | Fib<{ tag: "Report"; year: number }, Dispatch>
   | Fib<{ tag: "Census" }, CensusReturn>
+  | Fib<{ tag: "Reset"; seed: number }, ResetAck>;
+
+/** Foreign tractors again, alone. Same port and same handler as the fibre
+ *  above, split out as a container of its own for exactly the reason
+ *  `TractorWorksC` and `ArmamentsC` are split out of heavy industry: a
+ *  combinator takes two containers, so a thing that is to be one side of a
+ *  composite must be a container and not a fibre of a larger one. This is the
+ *  right-hand summand of the routing decision in `gosplan.server.ts`. */
+export type ImportC =
+  Fib<{ tag: "BuyTractors"; gold: number; year: number }, ImportReport>;
+
+// ── The commissar for tractor policy (:8806) ──────────────────────────
+/** What the commissar answers when asked where tractors should come from.
+ *
+ *  The field `recommend` is one of three words and nothing in the system
+ *  enforces that. This container is served by a process that spawns the
+ *  `claude` binary, so its reply is written by a language model, arrives as
+ *  text, and is a position of this container only because the decoder in
+ *  `gosplan.server.ts` says so. The field `note` is prose. It is worth exactly
+ *  what the dispatches are worth, which is nothing.
+ *
+ *  This is the untyped oracle of the note, made executable. Every other
+ *  commissariat could in principle be trusted because a person wrote its
+ *  arithmetic. This one cannot, and the decoder is the only place that
+ *  difference is ever checked. */
+export interface Advice {
+  recommend: "tractors" | "armaments" | "buy";
+  note: string;
+}
+
+export type CommissarC =
+  | Fib<{ tag: "Advise"; year: number; steel: Steel; gold: number;
+          tractors: number; warReserve: Steel }, Advice>
+  | Fib<{ tag: "Report"; year: number }, Dispatch>
   | Fib<{ tag: "Reset"; seed: number }, ResetAck>;
 
 // ── The verdict on 1941 ───────────────────────────────────────────────
