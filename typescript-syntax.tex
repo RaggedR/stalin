@@ -1,0 +1,459 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{listings}
+\usepackage{xcolor}
+\definecolor{seclink}{HTML}{1F4E8C}
+\usepackage[colorlinks=true,linkcolor=seclink,citecolor=seclink,urlcolor=blue]{hyperref}
+\usepackage{parskip}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,fit,backgrounds,calc}
+
+\definecolor{ink}{HTML}{1A1A1A}
+\definecolor{grey}{HTML}{5F5B54}
+\definecolor{pale}{HTML}{F5F3EE}
+\definecolor{tensor}{HTML}{1F6F4A}
+\definecolor{seq}{HTML}{1F4E8C}
+\definecolor{prod}{HTML}{9C3B1B}
+\definecolor{hdrbg}{HTML}{D6E4F5}   % headers
+\definecolor{bdybg}{HTML}{D5EDDC}   % bodies
+\definecolor{linebg}{HTML}{F7D8E3}   % protocol / request line / status line
+\definecolor{pathbg}{HTML}{F6E7C1}   % paths
+
+\tikzset{
+  srv/.style={draw=ink, fill=white, rounded corners=2pt, inner sep=3.4pt,
+              font=\scriptsize\ttfamily, minimum height=5.6mm},
+  plan/.style={srv, fill=pale, font=\scriptsize\ttfamily\bfseries},
+  op/.style={circle, draw, inner sep=0.6pt, minimum size=6.4mm, font=\footnotesize\bfseries},
+  ar/.style={-{Stealth[length=1.8mm]}, semithick, color=grey},
+  lbl/.style={font=\tiny\itshape, color=grey},
+  capt/.style={font=\scriptsize\bfseries},
+  subt/.style={font=\tiny\itshape, color=grey},
+}
+
+\definecolor{kw}{RGB}{20,80,160}
+\definecolor{cmt}{RGB}{110,110,110}
+\definecolor{str}{RGB}{160,60,20}
+\definecolor{codebg}{RGB}{246,246,244}
+
+\lstdefinestyle{code}{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{kw}\bfseries,
+  commentstyle=\color{cmt}\itshape,
+  stringstyle=\color{str},
+  breaklines=true,
+  frame=leftline,
+  framesep=7pt,
+  xleftmargin=12pt,
+  rulecolor=\color{gray!45},
+  backgroundcolor=\color{codebg},
+  columns=fullflexible,
+  showstringspaces=false,
+  keepspaces=true,
+  literate=
+    {↓}{{$\downarrow$}}1 {↑}{{$\uparrow$}}1
+    {→}{{$\rightarrow$}}1 {⊠}{{$\boxtimes$}}1
+    {◁}{{$\lhd$}}1 {×}{{$\times$}}1 {—}{{\textemdash}}1 {’}{{'}}1,
+}
+\lstset{style=code}
+
+% lstlinebgrd, patched for current listings (the 'Numbers none unknown' bug).
+\makeatletter
+\let\old@lstKV@SwitchCases\lstKV@SwitchCases
+\def\lstKV@SwitchCases#1#2#3{}
+\makeatother
+\usepackage{lstlinebgrd}
+\makeatletter
+\let\lstKV@SwitchCases\old@lstKV@SwitchCases
+\lst@Key{numbers}{none}{%
+  \def\lst@PlaceNumber{\lst@linebgrd}%
+  \lstKV@SwitchCases{#1}%
+  {none:\\%
+   left:\def\lst@PlaceNumber{\llap{\normalfont
+     \lst@numberstyle{\thelstnumber}\kern\lst@numbersep}\lst@linebgrd}\\%
+   right:\def\lst@PlaceNumber{\rlap{\normalfont
+     \kern\linewidth \kern\lst@numbersep
+     \lst@numberstyle{\thelstnumber}}\lst@linebgrd}%
+  }{\PackageError{Listings}{Numbers #1 unknown}\@ehc}}
+\makeatother
+
+% Enforcement badges: compile time / run time / developer discipline.
+\definecolor{enfc}{HTML}{1F4E8C}
+\definecolor{enfr}{HTML}{1F6F4A}
+\definecolor{enfd}{HTML}{9C3B1B}
+\newcommand{\badge}[2]{\raisebox{0.05ex}{\fcolorbox{#1}{white}{\textcolor{#1}{\scriptsize\bfseries\,#2\,}}}}
+\newcommand{\enfC}{\badge{enfc}{C}}
+\newcommand{\enfR}{\badge{enfr}{R}}
+\newcommand{\enfD}{\badge{enfd}{D}}
+
+% Keep every code block whole: wrapping each listing in an unbreakable minipage
+% makes LaTeX move it to the next page rather than split it across one.
+\usepackage[most]{tcolorbox}
+\definecolor{yellowbg}{HTML}{FCF6DC}
+\tcbset{plainbg/.style={breakable, enhanced, sharp corners, boxrule=0pt, frame hidden,
+  parbox=false,
+  before upper={\setlength{\parskip}{0.55\baselineskip}\setlength{\parindent}{0pt}},
+  left=4mm, right=4mm, top=3mm, bottom=3mm, before skip=3mm, after skip=3mm}}
+\newtcolorbox{listbox}{plainbg, colback=black!5}
+\newtcolorbox{orestisbox}{plainbg, colback=hdrbg}
+\newtcolorbox{sectionbox}{plainbg, colback=yellowbg}
+\newtcolorbox{pinkbox}{plainbg, colback=linebg}
+
+\usepackage{etoolbox}
+\BeforeBeginEnvironment{lstlisting}{\par\vspace{0.4\baselineskip}\noindent\begin{minipage}{\linewidth}}
+\AfterEndEnvironment{lstlisting}{\end{minipage}\par\vspace{0.4\baselineskip}}
+
+% Terminal trace: literate arrows are mis-placed under columns=fullflexible,
+% and a literate glyph opening line 1 is flushed onto its own line -- hence
+% keepspaces and the leading space on every line of the block below.
+\lstdefinestyle{trace}{
+  basicstyle=\ttfamily\small,
+  keepspaces=true,
+  frame=leftline, framesep=7pt, xleftmargin=12pt,
+  rulecolor=\color{gray!45},
+  backgroundcolor=\color{codebg},
+  literate={↓}{{$\downarrow$}}1 {↑}{{$\uparrow$}}1 {…}{{\ldots}}1,
+}
+
+\lstdefinelanguage{TS}{
+  morekeywords={type,function,switch,case,return,const,extends,never,interface,let,await,async,export,import,null,unknown,new,try,catch,throw,in,of},
+  morecomment=[l]{//},
+  morestring=[b]",
+}
+\lstdefinelanguage{SH}{
+  morekeywords={curl,deno,run,export,for,do,done,if,then,fi,echo,sort,head,chmod,cat},
+  morecomment=[l]{\#},
+  morestring=[b]',
+}
+
+\title{\vspace{-2em}TypeScript Syntax}
+\author{Robin Langer}
+\date{1 September 2026}
+
+\begin{document}
+\maketitle
+
+\begin{center}
+\begin{minipage}{0.88\linewidth}\small\itshape
+\textbf{Companion.} This is the TypeScript reference for the note \emph{Stalin: The Game}.
+It is not meant to be read straight through. Refer back to it as necessary.
+\end{minipage}
+\end{center}
+\vspace{1mm}
+
+\tableofcontents
+
+\newpage
+
+\section{TypeScript syntax}
+\label{sec:ts}
+
+\begin{sectionbox}
+It is an unfortunate accident of history that JavaScript became the ``default'' language for web
+app development. TypeScript is an unfortunate attempt to ``bolt on'' a type system to JavaScript
+after the event.
+
+This is a ``crash course'' in TypeScript, and I am also learning as I write here. It is a bit of a
+head twister, and it bears almost no resemblance to Haskell or Lean.
+
+Don't try to memorize all this now. Refer back to it as necessary.
+\end{sectionbox}
+
+\begin{center}
+\colorbox{hdrbg}{\begin{minipage}{0.94\linewidth}\vspace{1.5mm}
+\textbf{The system is deliberately unsound.} This is the sentence to carry into the rest of the
+note. TypeScript does not claim that a well-typed program cannot go wrong. It claims to catch a
+useful class of mistakes.
+\vspace{1.5mm}\end{minipage}}
+\end{center}
+
+\subsection{Basic types}
+\label{sec:tssyntax}
+
+\begin{listbox}
+\begin{itemize}\setlength{\itemsep}{2pt}
+
+\item The atomic types are \texttt{number}, \texttt{string}, \texttt{boolean}, \texttt{null} and
+      \texttt{undefined}.
+
+\item A string in quotes may be used as a type. The type \texttt{"failure"} has exactly one
+      inhabitant, namely that one string.
+
+\item The type \texttt{never} has no inhabitants at all.
+
+\item The type \texttt{A | B} is a value that is an \texttt{A} or a \texttt{B}. It is an
+      untagged union.
+
+\item The type \texttt{\{ id: number; title: string; author: string \}} is a \emph{record}. A
+      value of it is a dictionary in the Python sense, with those three keys. In our running
+      example this is the type of a book, and the note gives it the name \texttt{Book}.
+
+\item The type \texttt{Array<Book>} is a list whose elements are all books.
+
+\item The signature \texttt{<T, R>(x: T) => R} is a generic function.
+
+\item The keyword \texttt{export} in front of a definition means that other files may use it.
+      Without it, the definition is private to its own file.
+
+\end{itemize}
+\end{listbox}
+
+\subsection{The weird stuff}
+
+\begin{listbox}
+\begin{itemize}\setlength{\itemsep}{2pt}
+
+\item The type \texttt{unknown} is a value about which nothing is known. Nothing may be done to
+      it until you have established what it is.
+
+\item The type \texttt{Record<string, unknown>} is a dictionary again, but this time with
+      arbitrary keys and nothing at all known about the values.
+
+\item The keyword \texttt{any} switches the type checker off for that value entirely.
+
+\item The notation \texttt{u as T} says ``trust me, this is a \texttt{T}''. This is very
+      upsetting for somebody in formal verification. It is called a \emph{type assertion}.
+
+\end{itemize}
+\end{listbox}
+
+\newpage
+
+\subsection{Type guards}
+\label{sec:guards}
+
+The notation \texttt{u as T} above asserts a type and checks nothing. There is a second notation
+that checks, and it is the one the wire code in this note is built on.
+
+\begin{lstlisting}[language=TS]
+export const isRecord = (u: unknown): u is Record<string, unknown> =>
+  typeof u === "object" && u !== null && !Array.isArray(u);
+\end{lstlisting}
+
+The word \texttt{is} is a keyword. It may appear only in the return type of a function, written
+\texttt{u is T} where \texttt{u} is one of that function's own parameters. It says that the function
+returns a boolean, and that a true answer means \texttt{u} is a \texttt{T}. A function declared that
+way is called a \emph{type guard}.
+
+The type guard above is used in one place only, immediately after a \texttt{JSON.parse}. So the
+value it is asked about is never an arbitrary TypeScript value. It is one of the six things the
+JSON grammar of the previous section allows, and the test only has to tell those six apart.
+
+The body of \texttt{isRecord} is three tests joined by \texttt{\&\&}. The operator \texttt{typeof}
+answers with a string naming the kind of a value.
+
+The first test, \texttt{typeof u === "object"}, rules out numbers, strings and booleans. The
+second, \texttt{u !== null}, rules out \texttt{null}. The third, \texttt{!Array.isArray(u)}, rules
+out arrays, which \texttt{typeof} also calls objects. This leaves
+\texttt{Record<string, unknown>} as the only remaining option.
+
+\newpage
+
+\subsection{Subtypes}
+
+\begin{listbox}
+\begin{itemize}\setlength{\itemsep}{2pt}
+
+\item In TypeScript we can talk about one type being a \emph{subtype} of another. For example
+      the type \texttt{"failure"} is a subtype of \texttt{string}. Every type is a subtype of
+      \texttt{unknown}, and \texttt{never} is a subtype of every other type.
+
+\item The type \texttt{Extract<Q, S>} keeps only those members of the union \texttt{Q} that are
+      subtypes of \texttt{S}, and throws the rest away.
+
+\item The notation \texttt{Book[K]} tells you the type of the value stored at field \texttt{K}
+      of the record type \texttt{Book}. It is called an \emph{indexed access type}. So
+      \texttt{Book["id"]} is \texttt{number}, and \texttt{Book["title"]} is \texttt{string}.
+
+\item The constraint \texttt{K extends U} says that \texttt{K} must be a subtype of \texttt{U}.
+
+\end{itemize}
+\end{listbox}
+
+\subsection{The powerful stuff}
+
+\begin{listbox}
+\begin{itemize}\setlength{\itemsep}{2pt}
+
+\item The notation \texttt{X extends Y ? A : B} is a \emph{conditional type}. It computes a type
+      by testing \texttt{X} against \texttt{Y}. This is the construct everything else in this
+      note rests on, and it gets a subsection of its own below.
+
+\item The notation \texttt{\{ [K in U]: F<K> \}} is a \emph{mapped type}, with one field for
+      every member of the union \texttt{U}. This one also gets a subsection of its own below.
+
+\end{itemize}
+\end{listbox}
+
+\subsection{On the level of values}
+
+\begin{listbox}
+\begin{itemize}\setlength{\itemsep}{2pt}
+
+\item The keywords \texttt{interface} and \texttt{type} both name a type, the first restricted to
+      records.
+
+\item The declaration \texttt{const x: T = e} introduces a constant called \texttt{x}, gives it
+      the type \texttt{T}, and sets it equal to the value \texttt{e}. The type may be left out.
+      Writing \texttt{const n = 3} gives \texttt{n} the type \texttt{number}, because \texttt{3}
+      is a number and the checker can see that.
+
+\item The expression \texttt{(x) => e} is a lambda expression.
+
+\item The expression \texttt{x ?? y} is equal to $x$, unless $x$ is \texttt{null} or
+      \texttt{undefined}, in which case it is equal to $y$.
+
+\item The expression \texttt{c ? a : b} is the ordinary conditional expression on the level of
+      values.
+
+\end{itemize}
+\end{listbox}
+
+\newpage
+
+\section{Structural typing}
+\label{sec:structural}
+
+\begin{sectionbox}
+A type describes what fields a value has. Any value with those fields has that type, whether or
+not anybody said so. Nothing has to be declared and nothing has to be constructed.
+\end{sectionbox}
+
+For unions that has a cost, and an example makes it plain. Suppose a length is either in metres
+or in feet.
+
+\begin{lstlisting}[language=TS]
+type Metres = { value: number };
+type Feet   = { value: number };
+type Length = Metres | Feet;
+\end{lstlisting}
+
+Those two are the same type. A value with one numeric field called \texttt{value} is a
+\texttt{Metres}, and it is equally a \texttt{Feet}, and the checker will let you pass either one
+where the other is expected. Given a \texttt{Length} there is no test that tells you which you
+have, because there is nothing to test.
+
+In Haskell you would write \texttt{data Length = Metres Double | Feet Double}. The constructor is
+itself the answer. TypeScript has no constructors, so if you want to tell the two apart you must
+put something there to look at.
+
+\begin{lstlisting}[language=TS]
+type Metres = { unit: "m";  value: number };
+type Feet   = { unit: "ft"; value: number };
+\end{lstlisting}
+
+Now \texttt{x.unit === "m"} answers the question. But notice what \texttt{unit} is. It is an
+ordinary field holding an ordinary string. The language did not provide it. We added it, and we
+have to keep adding it, and everything that wants to tell metres from feet has to read it.
+
+\subsection{A tagged union writes down a finite choice}
+
+Once every case carries a tag, the checker can use it. Stay with lengths, and give the two cases
+different data so that there is something to get wrong.
+
+\begin{lstlisting}[language=TS]
+type Length =
+  | { unit: "m";  metres: number }
+  | { unit: "ft"; feet: number };
+\end{lstlisting}
+
+\newpage
+
+\section{Compiling down to JavaScript}
+\label{sec:unusual}
+
+\subsection{A cast is a promise, not a check}
+
+The types are \emph{erased}. The program that executes has no representation of them and no check
+derived from them. So the \texttt{as} operator is not a conversion. It is an assertion. The checker
+accepts it without verifying, and the runtime cannot verify it at all.
+
+In the example below, \texttt{toFixed} is a method that rounds a number to a given number of
+decimal places. It exists on numbers and on nothing else, which is what makes it a useful test.
+
+\begin{lstlisting}[language=TS]
+const raw = '{"id":"1","title":"Diaspora","author":"Greg Egan"}';
+const b = JSON.parse(raw) as Book;   // a promise, not a check
+console.log(b.id.toFixed(0));        // compiles: id is declared number
+\end{lstlisting}
+
+\begin{lstlisting}[language=SH]
+$ deno check t2.ts      -- passes. Nothing is wrong as far as the checker knows.
+$ deno run   t2.ts
+TypeError: b.id.toFixed is not a function
+\end{lstlisting}
+
+The checker was told \texttt{id} is a number and believed it. The id was a string all along. The
+error surfaced at the first place that actually used it. That may be a long way from the cast, and
+in a real program is likely to be somewhere else entirely.
+
+\subsection{\texttt{unknown} is what you want at a boundary}
+
+Two types describe a value you know nothing about, and they behave in opposite ways.
+
+The type \texttt{any} switches the checker off. Every operation on an \texttt{any} is permitted.
+
+\begin{lstlisting}[language=TS]
+const raw: any = JSON.parse('{"id":"1","title":"Diaspora","author":"Greg Egan"}');
+console.log(raw.id.toFixed(0));
+\end{lstlisting}
+
+\begin{lstlisting}[language=SH]
+$ deno check anyex.ts     -- passes, no complaint
+$ deno run   anyex.ts
+TypeError: raw.id.toFixed is not a function
+\end{lstlisting}
+
+The id was the string \texttt{"1"} all along. Nothing objected, because nothing was looking.
+
+The type \texttt{unknown} does the opposite. It permits nothing until you have established what you
+have.
+
+\begin{lstlisting}[language=TS]
+const raw: unknown = JSON.parse('{"id":"1","title":"Diaspora","author":"Greg Egan"}');
+console.log(raw.id);
+\end{lstlisting}
+
+\begin{lstlisting}[language=SH]
+$ deno check unknownex.ts
+TS18046 [ERROR]: 'raw' is of type 'unknown'.
+\end{lstlisting}
+
+That refusal is the useful thing. The type \texttt{any} would have compiled and then failed later, in the
+manner of the previous subsection. The type \texttt{unknown} makes the boundary visible. It refuses to let
+you cross it accidentally.
+
+\subsection{Validate, do not cast}
+
+So how does a value we know nothing about honestly become one whose type we know? By code that looks at
+the fields. The signature to aim for is \texttt{unknown} in, and the type \emph{or nothing} out.
+
+\begin{lstlisting}[language=TS]
+function asBook(u: unknown): Book | null {
+  if (typeof u !== "object" || u === null) return null;
+  const o = u as Record<string, unknown>;
+  if (typeof o.id     !== "number") return null;
+  if (typeof o.title  !== "string") return null;
+  if (typeof o.author !== "string") return null;
+  return { id: o.id, title: o.title, author: o.author };  // rebuilt, not asserted
+}
+\end{lstlisting}
+
+\newpage
+
+Try it on three documents.
+
+\begin{lstlisting}[language=TS]
+asBook({ id: 13,   title: "Diaspora", author: "Greg Egan" })
+// { id: 13, title: "Diaspora", author: "Greg Egan" }
+
+asBook({ id: "13", title: "Diaspora", author: "Greg Egan" })
+// null -- the id is a string
+
+asBook({ id: 13,                     author: "Greg Egan" })
+// null -- there is no title
+\end{lstlisting}
+
+\end{document}
