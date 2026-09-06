@@ -1,0 +1,966 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{listings}
+\usepackage{xcolor}
+\definecolor{seclink}{HTML}{1F4E8C}
+\usepackage[colorlinks=true,linkcolor=seclink,citecolor=seclink,urlcolor=blue]{hyperref}
+\usepackage{parskip}
+\usepackage[most]{tcolorbox}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,fit,backgrounds,calc}
+
+\definecolor{ink}{HTML}{1A1A1A}
+\definecolor{grey}{HTML}{5F5B54}
+\definecolor{pale}{HTML}{F5F3EE}
+\definecolor{yellowbg}{HTML}{FBF3D5}
+\definecolor{pinkbg}{HTML}{FADDE1}
+\definecolor{tensor}{HTML}{1F6F4A}
+\definecolor{seq}{HTML}{1F4E8C}
+\definecolor{prod}{HTML}{9C3B1B}
+\definecolor{sumc}{HTML}{6B3FA0}
+\definecolor{codebg}{RGB}{246,246,244}
+
+\tcbset{plainbg/.style={boxrule=0pt, sharp corners, colframe=white,
+  left=4mm, right=4mm, top=3mm, bottom=3mm, before skip=3mm, after skip=3mm}}
+\newtcolorbox{sectionbox}{plainbg, colback=yellowbg}
+\newtcolorbox{alarmbox}{plainbg, colback=pinkbg}
+
+\tikzset{
+  lvl/.style={draw=ink, fill=white, rounded corners=2.5pt, align=center,
+              font=\small\ttfamily, inner sep=4.5pt, minimum width=44mm,
+              minimum height=8mm},
+  leafn/.style={draw=ink, fill=white, rounded corners=2pt, align=center,
+                font=\scriptsize\ttfamily, inner sep=3.4pt, minimum height=6mm},
+  op/.style={circle, draw, inner sep=0.6pt, minimum size=7mm, font=\small\bfseries},
+  ar/.style={-{Stealth[length=1.8mm]}, semithick, color=grey},
+  lbl/.style={font=\scriptsize\itshape, color=grey},
+}
+
+\lstdefinestyle{code}{
+  basicstyle=\ttfamily\small,
+  commentstyle=\color{grey}\itshape,
+  breaklines=true,
+  frame=leftline,
+  framesep=7pt,
+  xleftmargin=12pt,
+  rulecolor=\color{gray!45},
+  backgroundcolor=\color{codebg},
+  columns=fullflexible,
+  showstringspaces=false,
+  keepspaces=true,
+  literate=
+    {↓}{{$\downarrow$}}1 {↑}{{$\uparrow$}}1
+    {→}{{$\rightarrow$}}1 {⊠}{{$\boxtimes$}}1
+    {◁}{{$\lhd$}}1 {×}{{$\times$}}1 {—}{{\textemdash}}1 {’}{{'}}1,
+}
+\lstset{style=code}
+
+\newcommand{\seqb}{\lhd^{\ast}}
+
+
+\title{\vspace{-2em}Interestingness as an Objective}
+\author{\normalsize Research notes on reward, scarcity, and machine-tuned game design}
+\date{September 2026}
+
+\begin{document}
+\maketitle
+\vspace{-2em}
+
+\begin{sectionbox}
+The Labyrinth is a turn-based dungeon crawler whose levels are generated and whose monsters are
+language models. An early draft of it had no strategy and no pleasure in it, and the fault was
+not in the writing. It was that the game had operators and nothing scarce behind them.
+
+\medskip
+
+This report is the evidence for the repair. It asks two questions. What is actually known about
+why a resource-limited turn-based game feels good, and can a machine be given something to
+maximise that stands in for feeling good. The answer to the second is yes, with a documented
+existence proof from 2011, and it is not difficulty and it is not one number.
+
+\medskip
+
+The central claim arrived last and reorganises the rest. Two measurements are needed and neither
+implies the other. \emph{Depth}, meaning bad play is punished, and \emph{breadth}, meaning that
+among good play there is no best. A game with depth and no breadth is a puzzle. The accompanying
+game \texttt{stalin} has both, by holding three ends apart and refusing to say which is the real
+one, and it is the working model for everything in Section~\ref{sec:plural}.
+\end{sectionbox}
+
+\section{The two questions}
+
+They are usually confused and they are not the same.
+
+The first is a design question. Given a turn-based game with limited resources and one player,
+which structures produce the experience of playing well rather than the experience of being
+processed. That question has a literature in psychology, a much larger literature in the practice
+of the genre, and a small number of findings sharp enough to act on.
+
+The second is an engineering question. The design of the game leaves ten or so numbers
+undetermined, and choosing them by argument is choosing them badly. Can a program play the game
+many times and choose them by evidence. That question has a literature in automated game design,
+a published success, and a cost problem that turns out to be solvable here for a reason peculiar
+to this architecture.
+
+\begin{sectionbox}
+The connection between them is the reason for one report rather than two. A tuner needs an
+objective function, and an objective function is a design claim written as arithmetic. So the
+first question is not preliminary to the second. It \emph{is} the second, done carefully enough
+to compile.
+\end{sectionbox}
+
+\section{Reward, stated correctly}
+\label{sec:reward}
+
+The word dopamine is used loosely in discussions of games and it is worth being precise, because
+the precise version says something useful and the loose version says only that pleasure exists.
+
+\subsection{The signal is an error, not a reward}
+
+Midbrain dopamine neurons do not fire in proportion to reward. They fire in proportion to
+\emph{reward prediction error}, which is the difference between what arrived and what was
+expected\footnote{Schultz, \emph{Dopamine reward prediction error coding}, Dialogues in Clinical
+Neuroscience 18(1), 2016. See also Schultz, \emph{Dopamine reward prediction-error signalling: a
+two-component response}, Nature Reviews Neuroscience 17, 2016.}. A fully predicted reward
+produces almost no phasic response. An unexpected one produces a large positive response, and an
+expected one that fails to arrive produces a dip below baseline.
+
+Three consequences follow directly and all three are design constraints.
+
+\begin{center}
+\begin{tabular}{@{}l@{\hspace{5mm}}>{\raggedright\arraybackslash}p{0.62\textwidth}@{}}
+\toprule
+\textbf{a prediction is required} & A reward the player did not see coming cannot be better than
+expected, because nothing was expected. The player must have been estimating an outcome, which
+means the game must have given them the means to estimate it. \\[1mm]
+\textbf{predictable is silent}    & Loot drawn from a fixed table by depth is fully predicted and
+therefore produces nothing. This is what the first draft of the design did. \\[1mm]
+\textbf{the dip is real}          & An expected reward that fails to arrive is negatively
+signalled. Loss has a mechanism, and it is not merely the absence of gain. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The first of those is the one usually missed. Surprise is not the same as randomness. A player
+who cannot form a prediction at all is not surprised by the outcome, they are indifferent to it,
+and the way to make outcomes surprising is to make the situation legible enough that the player
+commits to a guess.
+
+\subsection{The finding worth building on}
+
+There is a second component to the dopamine response, discovered by Fiorillo, Tobler and
+Schultz, and it is the single most useful quantitative result in this
+report\footnote{Fiorillo, Tobler and Schultz, \emph{Discrete Coding of Reward Probability and
+Uncertainty by Dopamine Neurons}, Science 299, 2003.}.
+
+Alongside the error signal there is a gradual ramp in activity between the cue and the moment the
+reward is due, and its size tracks \emph{uncertainty} rather than value. It is maximal when the
+probability of reward is one half, and it falls away as the probability approaches either zero or
+one.
+
+\begin{sectionbox}
+Which gives a target rather than a direction. The advice to make a game uncertain is not
+actionable, because uncertainty has no natural units. The advice to arrange that the pivotal
+decision of a run sits near even odds is actionable, is measurable from a batch of playthroughs,
+and is a legitimate objective for an optimiser.
+\end{sectionbox}
+
+Two honest qualifications. The measurements are of single neurons in macaques anticipating juice,
+and the distance from there to a player deciding whether to descend one more level is very
+large. And a design rule near one half is independently supported by ordinary design reasoning
+and by Browne's uncertainty criterion in Section~\ref{sec:browne}, which arrived at it from
+self-play statistics with no neuroscience involved. So the correct reading is convergence
+between three arguments rather than derivation from one, and the rule is worth adopting for that
+reason and not because it has a brain scan attached.
+
+\subsection{What this does not license}
+\label{sec:notlicensed}
+
+The literature on gamification is largely a record of this material being misused, and the
+failure mode is well documented enough to state as a warning.
+
+The overjustification effect is that supplying an expected external reward for an activity which
+was already intrinsically interesting reduces the motivation to do it. Reviews of applied
+gamification report that arbitrary extrinsic rewards do not merely fail to help, they measurably
+displace the motivation that was there\footnote{Dah et al., \emph{Gamification is not Working:
+Why?}, Games and Culture, 2025. See also the overjustification literature descending from Deci
+and Ryan.}. Points, badges and leaderboards bolted onto something already enjoyable make it less
+enjoyable once the points stop meaning anything.
+
+\begin{alarmbox}
+So the instruction here is narrow. Nothing in this report recommends adding a reward layer to the
+Labyrinth. Every recommendation is about making the decisions the player already makes have
+consequences they can estimate. The pleasure is meant to come from the estimate turning out to
+be right, which is intrinsic to playing, and not from a number going up beside the screen.
+\end{alarmbox}
+
+\subsection{Autonomy and competence}
+
+The complementary positive account is self-determination theory, applied to games by Ryan, Rigby
+and Przybylski across four studies\footnote{Ryan, Rigby and Przybylski, \emph{The Motivational
+Pull of Video Games: A Self-Determination Theory Approach}, Motivation and Emotion 30, 2006. See
+also Przybylski, Rigby and Ryan, \emph{A Motivational Model of Video Game Engagement}, Review of
+General Psychology 14, 2010.}. They find that perceived autonomy and perceived competence
+independently predict enjoyment, preference and post-play well-being, and that they do so
+independently of the game's content.
+
+Read as design constraints, autonomy means the game must offer choices whose alternatives were
+genuinely available, and competence means the player must be able to tell that the outcome
+followed from their choice. Both are properties of the decision structure and neither is a
+property of the reward schedule.
+
+\begin{sectionbox}
+Which is convenient, because both are exactly what the operator census of the Labyrinth
+measures. A tensor offers no autonomy, because both sides happen regardless. A product with
+nothing scarce behind it offers no competence, because the outcome did not follow from the
+choice. The two psychological requirements have algebraic signatures.
+\end{sectionbox}
+
+\section{Intermittent reward}
+\label{sec:intermittent}
+
+The mechanism is operant conditioning and the relevant schedule has a name. Under a
+\emph{variable ratio} schedule the reward arrives after an unpredictable number of responses, and
+that schedule is the most productive and the most resistant to extinction of any that
+Skinner classified\footnote{Standard treatment in Simply Psychology, \emph{Schedules of
+Reinforcement}, and Explore Psychology, \emph{Variable Ratio Schedule of Reinforcement}. The
+original taxonomy is Ferster and Skinner, \emph{Schedules of Reinforcement}, 1957.}. Resistance to
+extinction is the technical name for what is meant by addictive. The behaviour continues after
+the rewards stop, because no number of unrewarded attempts is evidence that the next one will
+fail.
+
+It composes exactly with Section~\ref{sec:reward}, and the two accounts are the same account. A
+fully predicted reward produces no prediction error. A variable ratio schedule guarantees that no
+reward is ever fully predicted. So the schedule is the machinery for keeping the error signal
+non-zero indefinitely, and the ramp that peaks at one half is the anticipation it produces while
+the player waits to find out.
+
+\subsection{The near miss}
+
+The second finding is sharper and more dangerous. A losing outcome which resembles a win, being
+two matching symbols out of three, increases the desire to continue. The effect appears in
+experienced gamblers and in people with no gambling history alike, and a near-miss rate of
+around thirty per cent is where the effect is reported to be
+strongest\footnote{\emph{The Near-Miss Effect in Slot Machines: A Review and Experimental Analysis
+Over Half a Century Later}, Journal of the Experimental Analysis of Behavior, 2020.}. Imaging work
+finds that near misses recruit reward-related regions in a pattern resembling actual wins.
+
+So thirty per cent is a number the tuner can hold, and near-miss rate is a parameter rather than
+an accident.
+
+\subsection{Where the line is}
+
+This material is the mechanism behind loot boxes and behind slot machines, and it is why
+Section~\ref{sec:notlicensed} exists. The line is not about whether variance is present. It is
+about what the variance is attached to.
+
+\begin{center}
+\begin{tabular}{@{}l@{\hspace{5mm}}>{\raggedright\arraybackslash}p{0.58\textwidth}@{}}
+\toprule
+\textbf{a game}         & The variance resolves a decision. The player chose to go a fourth level
+down, and what they find there is the answer to that choice. Playing better shifts the
+distribution. \\[1mm]
+\textbf{a slot machine} & The variance resolves a repetition. The only input is \emph{again},
+skill does not move the distribution, and the near miss is manufactured by stopping the reels
+just short. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{sectionbox}
+Which gives one rule and it is checkable. If the only input to the variable outcome is the
+decision to try again, it is a slot machine whatever else is drawn on it. If the distribution the
+player is drawing from was selected by their earlier decisions, it is a game, and the intermittent
+schedule is doing legitimate work.
+\end{sectionbox}
+
+The same test settles the near miss. An honest near miss is informative, meaning the player can
+see what they would have needed and can go and get it. A keeper who refuses and names the piece
+that was missing is a near miss which teaches. A fabricated near miss conceals that the outcome
+was never close, and it is the version that does harm.
+
+\subsection{What this gives the Labyrinth}
+
+Three places where the schedule is already available and one of them is free.
+
+\textbf{Loot.} The depth tables of the design fix what \emph{kind} of thing can be found at each
+depth, which is a type-level bound and stays. Which item arrives inside that bound becomes a
+draw, and the variance of the draw rises with depth. So push-your-luck and variable ratio become
+the same knob, and the deeper level is both more dangerous and more variable.
+
+\textbf{The keeper.} The verdict is already a variable ratio reward and nothing had to be added.
+Nothing in the program knows the answer, so the schedule is not simulated, it is the actual
+epistemic situation. This is the one reward in the game whose unpredictability is honest all the
+way down.
+
+\textbf{The informative refusal.} A keeper who declines and says what was missing is a
+thirty-per-cent near miss which also plants an objective. It sends the party back down for a
+named thing, which is the loop the design already wanted and had no trigger for.
+
+\begin{alarmbox}
+And one thing it must not give. There is no draw anywhere in this game whose only input is a
+decision to repeat. Every variable outcome sits behind a choice that cost light, and light is
+finite, so the schedule can never become a lever the player pulls indefinitely. That is not a
+policy about restraint. It is a structural consequence of having exactly one clock.
+\end{alarmbox}
+
+\section{What the genre already knows}
+
+Practice is ahead of theory here, and three games are worth reading closely because each has
+already solved part of the problem and one of them documents its own failure.
+
+\subsection{Push your luck, and why intuition fails at it}
+
+The structure is old and the reason it works is arithmetical. Each additional step multiplies the
+reward and multiplies the risk, and human estimation of compounded probability is
+poor\footnote{Analysis of the structure in Balatro and modern roguelikes: Game Wisdom, \emph{The
+Mathematics of Push Your Luck}, 2024.}. So the player is repeatedly asked a question they
+cannot answer exactly and can answer approximately, which is the ideal condition for a decision
+to feel like judgement rather than calculation.
+
+The Labyrinth already had the shape of this in the phrase about going down as far as you dare,
+and had nothing implementing it. Depth was free. Nothing accumulated on the way down and nothing
+was risked by continuing.
+
+\subsection{Darkest Dungeon, and the failure it recorded}
+
+The closest published relative of the light mechanic is Darkest Dungeon's light meter. Light
+starts at one hundred, depletes as the party moves, at one unit through explored ground and six
+through new, and can be restored with a torch or lowered
+deliberately\footnote{Darkest Dungeon Wiki, \emph{Light Meter}.}. Lower light raises enemy damage
+and accuracy and stress, and raises the quality of loot and the chance of a critical hit.
+
+Two things about it matter for us and they point in opposite directions.
+
+The design succeeds because light is one number that couples to everything. It is described by
+players as the closest thing the game has to a difficulty slider, and the decision it poses is
+whether the extra profit is worth the extra risk, which is a real question asked continuously.
+
+The design also failed in a specific and instructive way. The intermediate light levels were not
+worth occupying, because only the lowest tier paid enough to justify its risk. So the choice
+collapsed from a continuum to two options, full light or full dark, and everything between them
+was a dead state.
+
+\begin{alarmbox}
+That is the failure our bindingness criterion in Section~\ref{sec:new} exists to detect. A
+mechanic can be fully implemented, fully documented, and occupy no part of anybody's play. It is
+a worse condition than being badly balanced, because being badly balanced is visible.
+\end{alarmbox}
+
+One difference is worth naming. Darkest Dungeon's light is a voluntary difficulty slider, where
+the player chooses to be in the dark for profit. The Labyrinth's light is a clock, where the
+count is rounds remaining and spending it is not optional. The clock is the stronger structure
+for our purpose, because it makes every round anywhere in the game cost the same thing, which is
+what makes the products in the algebra argue with each other.
+
+\subsection{Into the Breach, and perfect information}
+
+Subset Games built Into the Breach in explicit reaction to the randomness of their previous
+game, wanting one in which every death felt like the player's own fault, and reached that by
+telegraphing every enemy attack\footnote{Subset Games, IGF interview, Game Developer, 2018.}.
+
+The player is told the enemy's move, the damage, the turn order, the whole map and the state of
+every resource. What is withheld is only what cannot be known, being the next wave's spawn points
+and what the shop will stock. The reported effect is that the player spends less time working out
+how the game works and more time working out how to win, and that each turn becomes a small
+puzzle with a discoverable best answer.
+
+\begin{sectionbox}
+Which is the same point the prediction error account makes, arrived at from the other side. A
+player who cannot predict cannot be surprised, and a player who cannot see the arithmetic cannot
+predict. Perfect information is not the opposite of tension. It is the precondition for tension,
+because it is what allows the player to know they are in trouble.
+\end{sectionbox}
+
+\subsection{The tension, and how it resolves}
+
+There is now an apparent contradiction at the centre of the design and it needs settling rather
+than skirting.
+
+The position. Skill depth requires that better play produce better outcomes, and better play
+requires the player be able to reason about consequences, so the game should be as legible as
+Into the Breach.
+
+The objection. The whole point of the Labyrinth is that its monsters are language models which
+may lie, may refuse, and need not answer the same threat the same way twice. That is the
+opposite of a telegraphed attack, and it is not a defect to be minimised, since the design
+document argues it is the reason for building the thing at all.
+
+The resolution is that these are two different kinds of uncertainty and only one of them is
+hostile to skill.
+
+\begin{center}
+\begin{tabular}{@{}l@{\hspace{5mm}}>{\raggedright\arraybackslash}p{0.60\textwidth}@{}}
+\toprule
+\textbf{the economy} & light remaining, arrows, hands, distances, what a weapon takes off, what
+loot is worth. Exact, visible, and never randomised. This layer is Into the Breach. \\[1mm]
+\textbf{the conversation} & what a monster wants, whether it is telling the truth, whether a
+keeper is persuaded. Unpredictable by construction, and unpredictable to the program as much as
+to the player. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+So the non-determinism is confined to the layer where it is the product, and the layer that
+carries the arithmetic is made perfectly legible precisely \emph{because} the other layer is
+not. A player who cannot be sure whether the goblin is lying must at least be certain how many
+rounds of light that conversation cost.
+
+\begin{sectionbox}
+And the practical difference is a rule about the interface. Every number in the party record is
+displayed exactly and continuously, including the count of rounds and the arithmetic of the way
+home. None of it is hidden for atmosphere. The atmosphere is in the monsters and it is the only
+place it is allowed to be.
+\end{sectionbox}
+
+\section{Plural ends}
+\label{sec:plural}
+
+Everything above assumed the player wants one thing and the tuner maximises one number. Both
+assumptions are wrong, they are wrong in the same way, and correcting them is the largest single
+improvement available to either the game or its tuning.
+
+\subsection{A scalar game is a solved game}
+
+A single-objective push-your-luck game has an optimal policy. Not an unknown one, an optimal one,
+and once a player has found it the remaining play is arithmetic. Come home with the largest haul
+is a scalar objective, so the Labyrinth as described has a best line, and skill depth measures
+only the distance a player still is from finding it.
+
+Compare what the accompanying game \texttt{stalin} does. It asks the player to industrialise a
+country, and it holds three ends apart from each other. Do not starve the peasants. Win the war
+in 1941. Raise agricultural output above what it would have been. All three are paid for out of
+one grain harvest, so they compete, and none of them is expressible in the units of the others.
+
+\begin{sectionbox}
+Its own documentation states the consequence plainly. Ranked by soldiers dead the best plan is
+brutalist mechanisation, and ranked by everyone dead it comes second, because the fifteen it
+starved outnumber the one soldier it saved. The game holds both numbers and does not say which is
+the real one.
+\end{sectionbox}
+
+That is where the strategy is, and scarcity alone does not produce it. Scarcity plus
+\emph{incommensurability} produces it. One clock and one goal is an optimisation problem. One
+clock and three goals with no exchange rate between them is a position the player has to take a
+view on, and taking a view is what playing is.
+
+\subsection{The autonomy argument, completed}
+
+Section~2.4 recorded that perceived autonomy predicts enjoyment, and the algebraic reading given
+there was that a choice must have had genuinely available alternatives. Plural ends give the
+stronger version.
+
+Under a single objective, every choice has a correct answer, and the player's autonomy is the
+freedom to be wrong. Under plural ends there is no correct answer, only a rate at which the
+player is willing to trade one end for another, and the choice is therefore theirs in a sense
+that no amount of branching provides. A game with one objective and a thousand paths offers less
+autonomy than a game with three objectives and ten.
+
+\subsection{The Labyrinth's three ends}
+
+They exist in the design already and are not distinguished, which is why it reads as one
+objective with decoration.
+
+\begin{center}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.20\textwidth}@{\hspace{4mm}}>{\raggedright\arraybackslash}p{0.42\textwidth}@{\hspace{4mm}}>{\raggedright\arraybackslash}p{0.24\textwidth}@{}}
+\toprule
+\textbf{end} & \textbf{what it is} & \textbf{paid for in} \\
+\midrule
+\textbf{the haul} & Gold and relics carried to the surface and sold. The only end that is
+spendable. &
+depth, and hands \\[1mm]
+\textbf{the labyrinth opened} & Locks opened from below, puzzles solved, wings entered. Permanent,
+compounding, and the only end that survives the party's death. &
+hands, light, and pieces that cannot be sold \\[1mm]
+\textbf{the bottom, before the end} & Reaching depth eight within a fixed number of descents.
+A threshold rather than a quantity. &
+parties \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The first two conflict over a mechanism the design already has and does not use. A puzzle piece
+cannot be sold and it occupies a hand. So every piece carried up is a unit of haul declined, and
+the choice at the bottom of a descent is not inventory management, it is a decision about which
+of two ends this trip was for.
+
+The second and third conflict over light. Rounds spent gathering pieces and arguing with a keeper
+are rounds not spent descending, and the calendar does not stop while a puzzle is solved.
+
+\begin{sectionbox}
+And the third end is the one the design is missing outright. There is no deadline anywhere in the
+document, so nothing punishes patience, and an objective nothing punishes is not an objective. A
+fixed number of descents is all it takes, and the multi-party section of the design already has
+the parties to spend against it.
+\end{sectionbox}
+
+\subsection{The trap that makes it work}
+
+What makes \texttt{stalin} more than three sliders is that the costs are coupled in a direction
+the player does not expect. Its own summary puts it as a peasant starved in 1932 being a soldier
+missing in 1941, so extracting harder to build steel shrinks the army the steel was meant to
+protect. Push far enough and you lose the war holding the largest stockpile in Europe.
+
+The Labyrinth has the same trap available and it is exact. A party lost is exploration absent
+later. Drive parties hard to open the labyrinth faster and you arrive at the last descent with
+nobody left to make it, holding the most thoroughly unlocked labyrinth nobody will ever reach the
+bottom of.
+
+\begin{alarmbox}
+That coupling is the difference between plural objectives and a menu. Three independent goals with
+independent costs is a choice of which slider to raise, and a player picks one and stops thinking.
+Three goals whose costs feed into each other with a delay is a position, and a position has to be
+reasoned about every turn.
+\end{alarmbox}
+
+\subsection{Front breadth, and the result this report turns on}
+
+Plural ends change what the tuner should measure, and they supply the criterion that was missing.
+
+Run the ladder of Section~\ref{sec:depth} and record each run's outcome not as a score but as a
+vector, being haul, labyrinth opened, and whether the bottom was reached. Take the non-dominated
+set, meaning the runs which no other run beat on every component at once. That set is the game's
+Pareto front, and its width is a measurement.
+
+\begin{center}
+\begin{tabular}{@{}l@{\hspace{5mm}}l@{\hspace{5mm}}>{\raggedright\arraybackslash}p{0.36\textwidth}@{}}
+\toprule
+\textbf{depth} & \textbf{breadth} & \textbf{what you have built} \\
+\midrule
+low  & low  & a coin flip \\
+high & low  & a puzzle, with one answer and a difficulty \\
+low  & high & a set of arbitrary preferences, none of them earned \\
+high & high & a game \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Skill depth says bad play is punished. Front breadth says that among good play there is no best.
+Both are required and neither implies the other, and this is the central claim of this report.
+The first draft of the Labyrinth failed on both, and the economy of the design's
+Section~4 repairs only the first.
+
+\begin{sectionbox}
+The table of eight strategies in \texttt{stalin}'s README is a Pareto front, printed. Five of the
+eight win the war, and the ranking by soldiers dead disagrees with the ranking by everyone dead.
+That disagreement is not a defect in the scoring. It is the evidence that the front has width,
+and it is the thing a scalar score would have concealed.
+\end{sectionbox}
+
+\subsection{So the tuner must not scalarise}
+
+The consequence for optimisation is immediate and it contradicts what the existing tooling in
+this repository does.
+
+The current \texttt{optimise.py} collapses eight criteria into a lexicographic scalar, being
+criteria met first and then tie-breaks, and searches by random restart and coordinate descent. That
+was the right thing to build first and it is the wrong thing to keep, because a scalarisation
+selects one point on the front and then cannot report that a front existed. The designer is handed
+a winner in place of a choice.
+
+The tools for the multi-objective version are standard. Non-dominated sorting with crowding
+distance, being NSGA-II, approximates a front directly and maintains spread along
+it\footnote{Deb, Pratap, Agarwal and Meyarivan, \emph{A Fast and Elitist Multiobjective Genetic
+Algorithm: NSGA-II}, IEEE Transactions on Evolutionary Computation 6(2), 2002.}. The hypervolume
+indicator scores a whole front against a reference point, which is what to use when two fronts
+must be compared rather than two settings. Multi-objective Bayesian optimisation exists and keeps
+the sample efficiency that Section~\ref{sec:cost} says is mandatory here.
+
+\begin{sectionbox}
+And there is a reason to prefer an archive over a front, which is that a designer wants to
+\emph{see} the tradeoff rather than be given its resolution. Keeping the best setting found in
+each region of behaviour space, rather than the best setting overall, is the quality-diversity
+approach, and its output is a map of what kinds of game the parameters can produce. That is a more
+useful artefact than a single balanced configuration, because choosing among kinds of game is a
+judgement nobody should want automated.
+\end{sectionbox}
+
+\subsection{What \texttt{stalin} already proved}
+
+Two findings are in this repository, they were paid for in somebody's time, and both support the
+recommendation.
+
+The first is in a comment at the top of \texttt{calibrate.ts}. Tuning against a single number was
+what produced a game where brutality was strictly dominated. That is the failure mode of
+scalarisation, observed, in this codebase, on this kind of game.
+
+The second is subtler and is the stronger argument. Of the eight things \texttt{stalin} is meant
+to say at once, seven hold and the eighth does not, and the accompanying analysis concludes that
+the reason is a dependency length rather than a number. In Pareto terms, that target lies outside
+the achievable region, so no assignment of the twelve constants will reach it and only a
+structural change will.
+
+\begin{alarmbox}
+A scalar score cannot tell those two situations apart. Seven out of eight looks like a tuning
+problem indefinitely, and the search keeps running. A front tells you which targets are
+unreachable in principle, because they sit beyond it, and that is a verdict on the design rather
+than on the constants. The eighth criterion was diagnosed by hand here. It should have been
+readable off a front.
+\end{alarmbox}
+
+\section{Interestingness as a measurable quantity}
+\label{sec:browne}
+
+The design question having been answered as far as it can be, the engineering question is whether
+any of it reduces to a number. It does, and the precedent is stronger than one might expect.
+
+\subsection{The existence proof}
+
+Cameron Browne and Frederic Maire's \emph{Ludi} system generated combinatorial board games as
+rule trees, played them against themselves, and scored the results against a battery of
+computable aesthetic criteria\footnote{Browne, \emph{Evolutionary Game Design}, SpringerBriefs in
+Computer Science, 2011. Browne and Maire, \emph{Automatic Generation and Evaluation of
+Recombination Games}, 2010.}. Fifty-seven criteria were implemented. The system evolved a game
+called Yavalath, which was subsequently published commercially and is well regarded by human
+players.
+
+That result settles the question of feasibility. A machine measuring self-play statistics against
+computable criteria produced a game good enough to sell, without a human designer supplying
+taste at any point in the loop. What remains is the translation problem.
+
+\subsection{Which criteria survive one player}
+
+Most of Browne's criteria assume two players with a score between them, and a majority of those
+do not translate. Drama in his sense is the degree to which the eventual winner suffered a
+negative lead, lead change is counted per turn against an opponent, and completion is about wins
+against draws. A single-player push-your-luck game has none of that furniture.
+
+Four translate cleanly.
+
+\begin{center}
+\begin{tabular}{@{}l@{\hspace{4mm}}>{\raggedright\arraybackslash}p{0.63\textwidth}@{}}
+\toprule
+\textbf{skill depth}  & Browne's own version is the correlation between play quality and outcome.
+The stronger form is Nielsen's and it is treated separately below. \\[1mm]
+\textbf{drama}        & Recast as recovery from a bad position against the game rather than an
+opponent. The fraction of successful runs which passed through \texttt{dying}, or through less
+than half their light. \\[1mm]
+\textbf{duration}     & Kept verbatim. Browne penalises both ends, since a game may be tiresome
+or trivial, and both are measured in rounds. \\[1mm]
+\textbf{uncertainty}  & Kept, as the spread of outcomes at a fixed setting, and connected to the
+one-half target of Section~2.2. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Skill depth as the primary objective}
+\label{sec:depth}
+
+The measure to maximise is Nielsen and Togelius's relative algorithm performance
+profile\footnote{Nielsen, Barros, Togelius and Nelson, \emph{General Video Game Evaluation Using
+Relative Algorithm Performance Profiles}, EvoApplications 2015. See also Nielsen et al.,
+\emph{Evolving Game Skill-Depth using General Video Game AI Agents}, CEC 2017.}. The construction
+is to run several agents of known and unequal strength on the same game and examine the ordering
+and the size of the gaps. Their reported result is that well-designed games show, on average, a
+larger performance difference between stronger and weaker algorithms than badly designed ones
+do. A related recent construction for tabletop games builds a skill ladder from the win rate of
+an agent given twice the thinking budget of another, across a doubling
+sequence\footnote{Goodman et al., \emph{Skill Depth in Tabletop Board Games}, 2024.}.
+
+For the Labyrinth the ladder is four policies, and it is a tensor.
+
+\[ \text{ladder} \;=\; \text{random} \;\boxtimes\; \text{greedy} \;\boxtimes\; \text{timid} \;\boxtimes\; \text{thinker} \]
+
+Random types a legal word. Greedy clears every room and descends whenever it can. Timid clears
+one room and climbs out. Thinker is Claude playing to win with the previous run logs available.
+The operator is a tensor because all four are prompted with the same setting and none sees what
+another did, and that independence is what makes the comparison mean anything.
+
+\begin{sectionbox}
+The decisive property of this objective is that it cannot be maximised by making the game hard.
+Reduce the light far enough and Thinker scores what Random scores, because nothing survives.
+Raise it far enough and they agree again, because nothing is at stake. The gap has an interior
+maximum, and difficulty measures have no such thing, which is why difficulty is the wrong
+objective and this is the right one.
+\end{sectionbox}
+
+\subsection{Two criteria the literature does not supply}
+\label{sec:new}
+
+The published criteria were written for games whose rules were fixed and whose parameters were
+being searched. The Labyrinth has a specific pathology they do not detect, which is the one
+Darkest Dungeon's intermediate light levels exhibited.
+
+\textbf{Bindingness.} For each scarce resource, the fraction of runs in which that resource was
+the one that ran out first. If light binds in ninety-five runs out of a hundred and hands never
+bind at all, then hands are not a mechanic. The rule exists in the document and in the code and
+has no effect on anybody's play. A good setting is one in which all four resources bind
+sometimes, and this is the numerical form of the design claim that a product is only a decision
+when its branches compete for something scarce.
+
+\textbf{Counterfactual regret.} At each sum in the algebra, the difference in outcome between the
+side taken and the side declined. Two ways down with the same outcome behind them are a coin. One
+that is always better is a trap. The target is a distribution with both signs in it and a mean
+away from zero, so that the choice mattered and neither answer was the answer.
+
+\begin{sectionbox}
+Regret is normally unmeasurable, because a path cannot be un-taken. It is cheap here for a reason
+peculiar to the architecture. The party record is the entire state that crosses a boundary, and a
+descent is a prompt sent to a program started fresh on a port, so the same record can be sent
+down both ways against two fresh levels and the two responses compared. The tuner can ask what
+would have happened and no player can.
+\end{sectionbox}
+
+A third candidate follows from Section~2.2 and is offered more tentatively. \textbf{Pivot
+probability}, being the estimated success probability of the marginal decision, tuned towards one
+half. It is the most direct expression of the uncertainty finding and the least established of
+the six.
+
+\section{Optimisation}
+
+Given six numbers to maximise and roughly ten parameters to vary, the question is which optimiser,
+and the answer is dictated entirely by what an evaluation costs.
+
+\subsection{Sample cost is the whole problem}
+\label{sec:cost}
+
+Ludi ran self-play games in the thousands, which is affordable when a playthrough is a tree
+search over a small board. A playthrough of the Labyrinth with a language model behind every
+monster is not in that regime by several orders of magnitude.
+
+The nearest well-documented budget comes from Zook, Fruchter and Riedl, who formalise playtesting
+as active learning and tune parameters of a shooter against explicit
+goals\footnote{Zook, Fruchter and Riedl, \emph{Automatic Playtesting for Game Parameter Tuning
+via Active Learning}, arXiv:1908.01417.}. Their regression goal is stated concretely, being that
+the player is hit exactly six times per wave, with the objective the squared difference from that
+target. Their reported sample requirement is around seventy evaluations for the regression task
+and one to two hundred for the classification task. Notably their evaluations were human
+playtests rather than simulated agents, which is what forced the sample efficiency.
+
+\begin{sectionbox}
+So the working assumption is hundreds of settings and not thousands, with a batch of playthroughs
+per setting. That is precisely the regime Bayesian optimisation exists for, and it rules out
+anything that needs a large population per generation.
+\end{sectionbox}
+
+\subsection{Two kinds of parameter}
+
+The parameters divide, and they divide by which optimiser can touch them.
+
+\begin{center}
+\begin{tabular}{@{}l@{\hspace{4mm}}>{\raggedright\arraybackslash}p{0.60\textwidth}@{}}
+\toprule
+\textbf{numeric} & rounds per torch, deepest level bearing a torch, arrows per quiver, hands,
+sword and bow damage, monster closing speed, rooms per level, monsters per room, labyrinth depth,
+loot value by depth \\[1mm]
+\textbf{prompt}  & what a monster is told it wants, how readily it is told to lie, how strict a
+standard a keeper is told to hold, how much a monster is told it knows about the level beneath \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The first column is a box in $\mathbb{R}^{10}$ or thereabouts, mostly integer-valued, and it
+wants Bayesian optimisation with discrete projection. The second column is not in any
+$\mathbb{R}^n$ and no covariance matrix will help. A prompt is improved by reading the runs it
+produced and rewriting it, which is something a language model does and a numerical optimiser
+cannot.
+
+\subsection{The precedent for coupling them}
+
+That coupling is exactly what \emph{RuleSmith} does. It balances a simplified civilisation game
+by running multi-agent language model self-play over textual rulebooks, and wrapping Bayesian
+optimisation around a multi-dimensional rule space covering faction mechanics, economy,
+production and combat\footnote{\emph{RuleSmith: Multi-Agent LLMs for Automated Game Balancing},
+arXiv:2602.06232.}. Its objective is minimising win-rate disparity between factions. Two features
+of it transfer directly.
+
+The first is adaptive sampling. Promising candidate settings receive more evaluation games for a
+more accurate estimate, and exploratory candidates receive fewer, which is the only way a budget
+of hundreds buys any confidence at all.
+
+The second is the reported outcome that the adjustments it proposes are interpretable, being
+legible rule changes a human designer can read and apply rather than an opaque vector. That
+matters here because the Labyrinth's parameters are all things a person can hold an opinion
+about, and a tuner whose output cannot be argued with is less useful than one whose output can.
+
+\subsection{Paying for it, and why the container claim earns its keep}
+
+The remaining obstacle is that thousands of playthroughs with Claude in every monster is not
+affordable, and the resolution is a property the architecture already claims.
+
+A monster is an interface. It is a finite set of prompts with a response type for each, and the
+response type is one of six actions. The party cannot tell from above what is behind that
+interface. So put a table behind it. A monster that chooses among the same six actions by rule
+presents the same interface, and the rest of the game cannot distinguish the two.
+
+\begin{center}
+\begin{tabular}{@{}l@{\hspace{5mm}}l@{\hspace{5mm}}>{\raggedright\arraybackslash}p{0.36\textwidth}@{}}
+\toprule
+\textbf{tier} & \textbf{behind the interface} & \textbf{what it tunes} \\
+\midrule
+cheap & a table & every number, thousands of runs, the full ladder \\
+dear  & Claude  & every prompt, tens of runs, Thinker only \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The cheap tier locates the region of the parameter box. The dear tier checks that the region
+survives contact with a monster capable of lying, and rewrites whichever prompts caused it not
+to. Between the two, sample adaptively.
+
+\begin{sectionbox}
+This is the strongest practical argument the container decomposition makes anywhere. The claim
+that a language model behind a socket is interchangeable with a table behind a socket is not a
+piece of architectural tidiness. It is the difference between a tuning run that costs a few
+dollars and one that cannot be run.
+\end{sectionbox}
+
+\newpage
+
+\section{Recommendations, with confidence}
+
+Ranked by expected effect on the two complaints, with an honest estimate against each. The design
+changes come first because the tuning changes are worthless without them.
+
+\small
+\begin{center}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.24\textwidth}@{\hspace{3mm}}>{\raggedright\arraybackslash}p{0.50\textwidth}@{\hspace{3mm}}>{\raggedright\arraybackslash}p{0.15\textwidth}@{}}
+\toprule
+\textbf{change} & \textbf{why} & \textbf{confidence} \\
+\midrule
+Three ends held apart &
+A scalar game has an optimal policy and is therefore solved. Scarcity produces arithmetic, and
+scarcity plus incommensurability produces a position. \texttt{stalin} is the working precedent. &
+high \\[2mm]
+A deadline, in descents &
+The third end does not exist in the design at all, and an objective nothing punishes is not an
+objective. &
+high \\[2mm]
+Pareto front, never a scalar score &
+\texttt{calibrate.ts} records that tuning against a single number is what produced a game where
+brutality was strictly dominated. Observed, in this codebase. &
+high \\[2mm]
+Front breadth as a second objective &
+Skill depth alone selects for puzzles. Breadth is what distinguishes a game from a solved one.
+Novel, and untested. &
+medium-high \\[2mm]
+Variable ratio on the loot draw, inside the depth-typed bound &
+The most extinction-resistant schedule there is, and the type-level bound keeps it honest. The
+keeper's verdict is already one and cost nothing. &
+high \\[2mm]
+Informative refusal at around thirty per cent &
+The near-miss rate the literature reports as strongest, and the informative form plants an
+objective instead of concealing one. &
+medium \\[2mm]
+One scarce clock, being light &
+Supplies the prediction that reward error needs, makes every product compete, and turns depth
+into arithmetic. Darkest Dungeon is the precedent and its failure mode is known. &
+high \\[2mm]
+Rooms as a product, not a tensor &
+An independent conjunction is a chore with an operator on it. This is the autonomy requirement
+in algebraic form. &
+high \\[2mm]
+Perfect information on the economy &
+Into the Breach's result and the prediction error account agree. Legibility is the precondition
+for tension rather than its enemy. &
+high \\[2mm]
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{center}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.24\textwidth}@{\hspace{3mm}}>{\raggedright\arraybackslash}p{0.50\textwidth}@{\hspace{3mm}}>{\raggedright\arraybackslash}p{0.15\textwidth}@{}}
+\toprule
+\textbf{change} & \textbf{why} & \textbf{confidence} \\
+\midrule
+Skill depth as the tuning objective &
+Published, validated, and cannot be gamed by raising difficulty. &
+high \\[2mm]
+Bindingness as a guard &
+Detects the exact failure Darkest Dungeon recorded. Cheap to compute. Not in the literature, so
+untested. &
+medium-high \\[2mm]
+Death costing a party and not a labyrinth &
+Standard in the genre and free here, since levels were being kept anyway. &
+medium-high \\[2mm]
+Two-tier tuning behind a fake monster &
+Rests on the container claim, which is the document's central thesis. If it fails, the thesis
+was wrong about something more important than tuning. &
+medium-high \\[2mm]
+Monsters knowing one true fact &
+Converts the way down from a coin flip into a decision and makes the non-determinism
+load-bearing. Untested and the most likely to need iteration. &
+medium \\[2mm]
+Counterfactual regret &
+Uniquely cheap here and genuinely novel. No precedent, so no idea whether the distribution it
+produces is informative. &
+medium \\[2mm]
+Pivot probability near one half &
+Best-supported psychology and the longest inferential chain. Adopt as a tiebreak, not a primary
+objective. &
+low-medium \\
+\bottomrule
+\end{tabular}
+\end{center}
+\normalsize
+
+\section{What would falsify this}
+
+Three things would, and each is checkable early.
+
+If the ladder does not separate at any setting, meaning Thinker never reliably beats Greedy
+anywhere in the parameter box, then the game has no skill in it and no amount of tuning will
+install any. That is a verdict on the mechanics rather than on the numbers, and it is the first
+thing the cheap tier should be asked.
+
+If bindingness cannot be brought away from a single resource, meaning light binds almost always
+regardless of the setting, then three of the four scarce things are decoration and the honest
+response is to remove them rather than to keep tuning.
+
+If the region found by the cheap tier does not survive the dear tier, meaning the game balanced
+against table-driven monsters plays entirely differently against monsters that can lie, then the
+container claim has failed where it matters, and the tuning must be done at a cost that may not
+be payable.
+
+And one more, added with Section~\ref{sec:plural} and arguably the most important of the four. If
+the front collapses to a point at every setting, meaning one way of playing dominates on all three
+ends everywhere in the parameter box, then the three ends are not really three. Either they do not
+genuinely compete, or one of them is a proxy for another, and the fix is in the design rather than
+in the constants. This is the failure \texttt{stalin}'s eighth criterion turned out to be, and it
+was diagnosed by hand there because there was no front to read it off.
+
+\begin{sectionbox}
+The first of the three is the one to run first, because it is the cheapest and it is the only one
+whose failure would mean the design is wrong rather than the numbers.
+\end{sectionbox}
+
+\section*{Sources}
+
+\small
+\begin{itemize}\setlength{\itemsep}{1pt}
+\item Fiorillo, Tobler and Schultz. Discrete Coding of Reward Probability and Uncertainty by
+Dopamine Neurons. \emph{Science} 299, 2003.
+\item Schultz. Dopamine reward prediction-error signalling: a two-component response.
+\emph{Nature Reviews Neuroscience} 17, 2016.
+\item Ryan, Rigby and Przybylski. The Motivational Pull of Video Games. \emph{Motivation and
+Emotion} 30, 2006.
+\item Przybylski, Rigby and Ryan. A Motivational Model of Video Game Engagement. \emph{Review of
+General Psychology} 14, 2010.
+\item Dah et al. Gamification is not Working: Why? \emph{Games and Culture}, 2025.
+\item Browne. \emph{Evolutionary Game Design}. Springer, 2011.
+\item Browne and Maire. Automatic Generation and Evaluation of Recombination Games, 2010.
+\item Nielsen, Barros, Togelius and Nelson. General Video Game Evaluation Using Relative
+Algorithm Performance Profiles. \emph{EvoApplications}, 2015.
+\item Nielsen et al. Evolving Game Skill-Depth using General Video Game AI Agents. \emph{CEC},
+2017.
+\item Goodman et al. Skill Depth in Tabletop Board Games, 2024.
+\item Zook, Fruchter and Riedl. Automatic Playtesting for Game Parameter Tuning via Active
+Learning. arXiv:1908.01417.
+\item RuleSmith: Multi-Agent LLMs for Automated Game Balancing. arXiv:2602.06232.
+\item Deb, Pratap, Agarwal and Meyarivan. A Fast and Elitist Multiobjective Genetic Algorithm:
+NSGA-II. \emph{IEEE Transactions on Evolutionary Computation} 6(2), 2002.
+\item Ferster and Skinner. \emph{Schedules of Reinforcement}, 1957.
+\item The Near-Miss Effect in Slot Machines: A Review and Experimental Analysis Over Half a
+Century Later. \emph{JEAB}, 2020.
+\item This repository. \texttt{calibrate.ts}, \texttt{optimise.py}, \texttt{README.md}, and
+\texttt{implementation.pdf}.
+\item Subset Games. Road to the IGF interview. \emph{Game Developer}, 2018.
+\item Darkest Dungeon Wiki. Light Meter.
+\item Game Wisdom. The Mathematics of Push Your Luck, 2024.
+\end{itemize}
+\normalsize
+
+\end{document}
