@@ -1,0 +1,73 @@
+Dear Neil,
+
+The next thing to build in the stalin game is the reporting. At the moment the
+commissariats tell Gosplan the truth. They should not.
+
+The observation is this. A commissariat that lies is still a perfectly good
+container morphism. The forward map takes the query and the backward map returns
+a well typed response. Every law holds. Nothing anywhere in the algebra
+distinguishes a true report from a false one. That is not a gap in the theory.
+It is the exact statement of why central planning is hard, and it means the
+whole thing can be modelled without touching a single interface. Only what sits
+behind them changes.
+
+So each commissariat gets two layers with the same type. What is actually true,
+and what it says. Gosplan sees only the second one. The player is Gosplan. At
+the reckoning the first layer is revealed, and the player finds out what ledger
+he was really writing for five years.
+
+The mechanic that makes it bite is the ratchet. Next year's quota is set from
+this year's reported output. So producing well is punished with a higher target,
+and nobody ever reports a surplus. This is the best documented pathology of the
+Soviet system and it puts the player in a real bind. Reward the good report and
+you have taught the sector to lie to you.
+
+The interesting part is how the player fights back, because this is where the
+combinators do actual work rather than decorative work.
+
+Cross checking is the product. Transport knows what it really moved. Agriculture
+claims what it harvested. The discrepancy between two interfaces tells you what
+neither one will say alone. The information comes out of the composition. That
+is the most concrete demonstration of the algebra I can think of.
+
+Inspection is the sequential one. Spend the resource, send the plenipotentiary,
+get ground truth for one sector for one year. What you learn changes what it is
+useful to ask next. Historically this is Molotov and Kaganovich being sent to
+Ukraine in 1932.
+
+The choice a commissariat makes between reporting honestly, inflating and hiding
+is the sum.
+
+Then the mechanic I would build the whole thing around. Terror improves reports
+and destroys information. Shoot the commissar for a bad number and every number
+after it is excellent. You have made the channel say what you want, which means
+it now tells you nothing, and you are planning a famine blind while your desk
+fills up with fulfilled quotas.
+
+That is not a moral claim and it should not be presented as one. It is a control
+result. Put it on the screen as a number. Compute the mutual information between
+the true state and the reported state and display it as a readout which collapses
+as terror rises. The player watches his own knowledge being destroyed by his own
+instrument, with no commentary from the game. I do not know of another game that
+does this.
+
+On determinism. Each commissariat gets a mechanical liar, which is a seeded
+function from true state, quota and fear to a report. Fully reproducible, so
+calibrate.ts and optimise.py still work. Then the Claude backed version inhabits
+the same interface and swaps in without Gosplan noticing. That is the sharpest
+statement of your point that I can make. A language model is just another
+inhabitant of the interface.
+
+The argument this puts the game into is the socialist calculation debate. Mises
+and Hayek against Lange and Lerner, on whether a central body can ever assemble
+the local knowledge that the price system aggregates for free. The model could
+run both. Lange said the board iterates towards the right prices by watching
+inventories. If that works in the model then it works, and we report it. Same
+discipline as the ledger. The game does not moralise and it does not conclude.
+
+Minimum version that proves the idea. One lying sector, the ratchet, one cross
+check against transport, terror, and the information readout. Everything else is
+more of the same.
+
+cheers,
+Robin
