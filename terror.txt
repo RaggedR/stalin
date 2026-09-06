@@ -60,7 +60,11 @@ inhabitant of the interface.
 
 The argument this puts the game into is the socialist calculation debate. Mises
 and Hayek against Lange and Lerner, on whether a central body can ever assemble
-the local knowledge that the price system aggregates for free. The model could
+the local knowledge that the price system aggregates for free. Your half of that
+argument is older and came out better. Bakunin told Marx in 1872 that a
+dictatorship of the proletariat would harden into a new administrative class
+ruling in the name of a people it could not see, which is the same objection
+sixty years early and from below rather than from the market. The model could
 run both. Lange said the board iterates towards the right prices by watching
 inventories. If that works in the model then it works, and we report it. Same
 discipline as the ledger. The game does not moralise and it does not conclude.
