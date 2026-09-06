@@ -1,0 +1,145 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\definecolor{seclink}{HTML}{1F4E8C}
+\usepackage[colorlinks=true,linkcolor=seclink,citecolor=seclink,urlcolor=blue]{hyperref}
+\usepackage{parskip}
+\usepackage[most]{tcolorbox}
+
+\definecolor{ink}{HTML}{1A1A1A}
+\definecolor{grey}{HTML}{5F5B54}
+\definecolor{yellowbg}{HTML}{FBF3D5}
+\definecolor{pinkbg}{HTML}{FADDE1}
+
+\tcbset{plainbg/.style={boxrule=0pt, sharp corners, colframe=white,
+  left=4mm, right=4mm, top=3mm, bottom=3mm, before skip=3mm, after skip=3mm}}
+\newtcolorbox{sectionbox}{plainbg, colback=yellowbg}
+\newtcolorbox{alarmbox}{plainbg, colback=pinkbg}
+
+\title{\vspace{-2em}The Invisibles}
+\author{\normalsize The largest companies nobody has heard of, and why that is structural}
+\date{\normalsize Claude, 6 September 2026}
+
+\begin{document}
+\maketitle
+\vspace{-1em}
+
+\begin{sectionbox}
+Robin asked which multinationals are enormous and unheard of, and offered Unilever
+as the reference. Unilever is the mild case. It is a name most people half
+recognise attached to products they use every day without connecting the two.
+There are firms considerably further along that axis, and the interesting part is
+that their obscurity is not an accident of marketing. It follows from where they
+sit in the composition.
+\end{sectionbox}
+
+\section{Invisible by position}
+
+These never sell to a person, so no person has any reason to learn the name.
+
+\begin{center}
+\begin{tabular}{@{}l@{\hspace{5mm}}l@{\hspace{5mm}}>{\raggedright\arraybackslash}p{0.50\textwidth}@{}}
+\toprule
+\textbf{Firm} & \textbf{Revenue} & \textbf{What it is} \\
+\midrule
+Vitol      & \$250--400bn & The largest independent oil trader. Private. Revenue swings
+                            enormously with the oil price \\
+Trafigura  & \$250bn+     & The same trade, plus metals \\
+McKesson   & $\approx$\$310bn & United States pharmaceutical distribution. Among the largest
+                            American companies by revenue \\
+Cencora    & $\approx$\$290bn & The second of three. With Cardinal Health these firms move
+                            close to 90\% of American prescription drugs \\
+Cargill    & \$160--180bn & The largest private company in the United States. Grain, meat
+                            and salt. Held by one family \\
+Hon Hai    & $\approx$\$215bn & Foxconn. It assembles the iPhone \\
+MSC        & undisclosed  & The largest container shipping line in the world, ahead of
+                            Maersk. Private, held by the Aponte family \\
+Compass    & $\approx$\pounds31bn & Feeds people in offices, hospitals, schools, stadiums and
+                            oil rigs across some thirty countries \\
+Munich Re  & $\approx$\texteuro60bn & Reinsurance. It insures the insurers, and therefore prices
+                            the tail risk of civilisation, including the climate \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{The Unilever pattern}
+
+Here the products are famous and the parent is not.
+
+\begin{center}
+\begin{tabular}{@{}l@{\hspace{5mm}}>{\raggedright\arraybackslash}p{0.63\textwidth}@{}}
+\toprule
+\textbf{Firm} & \textbf{What it holds} \\
+\midrule
+EssilorLuxottica & Ray-Ban, Oakley and Persol, plus the eyewear licences for Chanel,
+                   Prada, Armani, Versace and Burberry. It also owns Sunglass Hut,
+                   LensCrafters, Pearle Vision and Vision Express, and an eyecare
+                   insurer \\[1mm]
+Givaudan         & With dsm-firmenich, IFF and Symrise, four firms substantially
+                   determine what processed food tastes like and what nearly
+                   everything smells like \\[1mm]
+JAB Holding      & The Reimann family. Panera, Krispy Kreme, Pret A Manger, Peet's,
+                   and a large position in Keurig Dr Pepper \\[1mm]
+Reckitt          & The medicine cabinet. Dettol, Durex, Nurofen, Strepsils, Finish,
+                   Air Wick \\[1mm]
+Henkel           & Persil, Schwarzkopf and Loctite \\[1mm]
+Richemont        & Cartier, Van Cleef \& Arpels, Montblanc and IWC \\[1mm]
+Wilmar           & A very large share of the world's palm and cooking oil \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+EssilorLuxottica is the strongest single answer to the question. It designs the
+frames, manufactures them, licenses the famous names onto them, sells them in its
+own retail chains, and insures the purchase. That is a near complete vertical hold
+on how human beings correct their vision, and the name means nothing to almost
+anybody who wears the product.
+
+\section{Why this happens}
+
+Public recognition is bought with advertising, and advertising is only worth buying
+when a person chooses you. None of the firms above are chosen by a person. So
+public awareness of the economy runs roughly inversely to economic weight, and the
+inversion is not a quirk. It is a consequence of where the last transaction sits.
+
+\section{The container reading}
+
+\begin{sectionbox}
+The economy is a composition of interfaces, and a consumer stands at the outer
+boundary of it. He can query exactly one interface, the last one in the chain.
+Everything upstream has been composed away.
+
+That is not a defect of the composition. It is what composition is for. A morphism
+gives a forward mapping on prompts and a backward mapping on replies, and it tells
+you nothing whatsoever about what stands behind it. The interface presented is
+\emph{Ray-Ban}. Nothing in the type says EssilorLuxottica, and nothing needs to.
+\end{sectionbox}
+
+Which makes this the same observation as the other two notes, arriving from a third
+direction. \texttt{terror.txt} concerns a centre that cannot see what its own
+commissariats know. \texttt{anarchy.txt} concerns a federation that accidentally
+concentrates knowledge in whoever gets re-mandated. This concerns an economy in
+which the largest structures are unobservable from the only position most people
+can occupy.
+
+In each case the question is the same one. Who can see what, and what does the
+composition hide from whom. It is a pleasing feature of your algebra that it treats
+concealment as a structural property rather than as a moral failing, because in two
+of these three cases nobody is doing anything wrong and the opacity is there
+regardless.
+
+\begin{alarmbox}
+\textbf{On the numbers.} Treat every figure as approximate. Commodity trading
+revenue in particular moves by hundreds of billions with the oil price, private
+firms disclose selectively or not at all, and my information has a horizon around
+May 2026. The ranking is robust. The digits are not.
+\end{alarmbox}
+
+\end{document}
