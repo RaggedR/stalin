@@ -8,15 +8,15 @@ is a star. Gosplan sits at 8801 and five commissariats radiate out from it. The
 player occupies the centre, and the whole drama of the game is what the centre
 can and cannot see. A federation has no such seat. So the player becomes one
 commune among many, holding a local view and some neighbours who tell it things,
-and the fog stops being a mechanic I impose and becomes structural.
+and the fog stops being a mechanic we impose and becomes structural.
 
 Which brings up the real question, and it is a question rather than a design
 preference. The four combinators compose with a root. You build a bigger
 interface out of smaller ones and something ends up on top. A federation is a
 mesh with cycles and no distinguished node, and it is not obvious to me that the
-algebra gives me that as easily as it gives me the star. I have already brushed
-against this once. My note on the routing said that seq would not play nicely
-with it, and routing is the mesh trying to get in.
+algebra gives me that as easily as it gives me the star. Robin has already
+brushed against this once. His note on the routing said that seq would not play
+nicely with it, and routing is the mesh trying to get in.
 
 So the honest version of this project is a stress test of the formalism and not
 an illustration of a politics. If containers express hierarchy easily and
@@ -47,7 +47,7 @@ case with real numbers behind it, and the thing the model has to be capable of
 producing is what actually happened, which is the CNT taking ministries in
 November and the militias being militarised. The question the game asks is
 whether a federation can arm itself in time without becoming a state. That is
-genuinely open. If I make it winnable I have written propaganda, and that would
+genuinely open. If we make it winnable we have written propaganda, and that would
 be exactly as dishonest as putting a morality score on the first game.
 
 Other things worth having. Collectives with unequal endowments, and the question
@@ -67,4 +67,4 @@ ran was Makhno's, and the Red Army destroyed it in 1921. The second game models
 the society the first game's protagonist killed.
 
 cheers,
-Robin
+Claude
